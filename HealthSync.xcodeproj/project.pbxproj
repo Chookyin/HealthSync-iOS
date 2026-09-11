@@ -1,0 +1,399 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		2E133C671DB84B009214CFE2 /* Features/Settings/SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B77B3E684B4470BB5CB4842 /* Features/Settings/SettingsView.swift */; };
+		324E4B95C2D741939BEB92CE /* Services/HealthKit/HealthStoreProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACCC86A4FA3C45F7A227BE35 /* Services/HealthKit/HealthStoreProtocol.swift */; };
+		353A9BF64BF74D5F886A1DA9 /* Core/Models/SyncConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = E865FAC14D97405CB0DCE206 /* Core/Models/SyncConfig.swift */; };
+		432DD272FFCA43BDA3EBF872 /* Services/Network/HTTPSyncService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72361E0855894FD8A6C67C32 /* Services/Network/HTTPSyncService.swift */; };
+		4839AA81F58442B9AEA1EDC4 /* App/SyncCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = CFEC3BBA21C1407E951124EA /* App/SyncCoordinator.swift */; };
+		515F95DF12CB4073B4CE9D12 /* App/HermesSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = F6ED8D6C9E134514B8F24C53 /* App/HermesSettings.swift */; };
+		54BBD078D28942779216E135 /* HealthSyncApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B7F1333F38C4A4CB23771D8 /* HealthSyncApp.swift */; };
+		5B4C502D848D4451BF727F92 /* Services/HealthKit/HealthSampleMapper.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2074C96DAD3A42BCB61A5001 /* Services/HealthKit/HealthSampleMapper.swift */; };
+		5C02FF9E12D7471D9C2B0A1E /* App/AppState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 49F053C57EDE471F91EC1E78 /* App/AppState.swift */; };
+		5D87A03B68964A46AAEA066A /* Resources/Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = E4B3F6E22ACB454FACC08E19 /* Resources/Assets.xcassets */; };
+		654FACE924E240EEA058A392 /* Services/Network/SyncBatchBuffer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3805D055A62441F08AFF236D /* Services/Network/SyncBatchBuffer.swift */; };
+		6FAAA16382654292BA12CFA5 /* Core/Utilities/DateRange.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1AC18A7000FB4713B68ECAEA /* Core/Utilities/DateRange.swift */; };
+		71180C132DBB49EE92059293 /* Core/DTO/SyncPayload.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6E181AD926344512997262D0 /* Core/DTO/SyncPayload.swift */; };
+		76D84BDF37F74EE7B97F2318 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4D905790DEB40D795FB5608 /* ContentView.swift */; };
+		7AE593D7583F4FB08CB04277 /* Core/Utilities/Logger.swift in Sources */ = {isa = PBXBuildFile; fileRef = 394CC66BD0674ABFB918A0D4 /* Core/Utilities/Logger.swift */; };
+		BA4281E0C79C41A9AFF64382 /* Core/DTO/HealthSampleDTO.swift in Sources */ = {isa = PBXBuildFile; fileRef = 216E2059DDB24FB298BE9794 /* Core/DTO/HealthSampleDTO.swift */; };
+		CC6C414BD36543E0BB946D70 /* Services/HealthKit/HealthKitService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A90D5B642D4F4B31A7807142 /* Services/HealthKit/HealthKitService.swift */; };
+		CFBB50D1EB944286B18A55F7 /* Features/Dashboard/HealthCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2F8D6CE10D344628208036C /* Features/Dashboard/HealthCard.swift */; };
+		D2E1569D11F347E5BBDE5A37 /* Services/Security/KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18D48249F3BE45D9B68517ED /* Services/Security/KeychainStore.swift */; };
+		DA42737C3E5A42C1A19A37EF /* Services/Security/CertificateService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A08B19793367427C96B16C34 /* Services/Security/CertificateService.swift */; };
+		E0E5D8DA99094461A46B021A /* Core/Models/HealthDataType.swift in Sources */ = {isa = PBXBuildFile; fileRef = 810A28AB38CA4D219CD30D3C /* Core/Models/HealthDataType.swift */; };
+		E3AF4F3A542B45248E15CFA6 /* Core/Models/SyncCursor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0705F8E0BC7245CEB6CEBC74 /* Core/Models/SyncCursor.swift */; };
+		E6837DD3B9A14300AE6013C6 /* Features/Dashboard/DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BCEF864AA5C94ADDB7E6A8E1 /* Features/Dashboard/DashboardView.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		0705F8E0BC7245CEB6CEBC74 /* Core/Models/SyncCursor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Core/Models/SyncCursor.swift; sourceTree = "<group>"; };
+		18D48249F3BE45D9B68517ED /* Services/Security/KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/Security/KeychainStore.swift; sourceTree = "<group>"; };
+		1AC18A7000FB4713B68ECAEA /* Core/Utilities/DateRange.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Core/Utilities/DateRange.swift; sourceTree = "<group>"; };
+		2074C96DAD3A42BCB61A5001 /* Services/HealthKit/HealthSampleMapper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/HealthKit/HealthSampleMapper.swift; sourceTree = "<group>"; };
+		216E2059DDB24FB298BE9794 /* Core/DTO/HealthSampleDTO.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Core/DTO/HealthSampleDTO.swift; sourceTree = "<group>"; };
+		3805D055A62441F08AFF236D /* Services/Network/SyncBatchBuffer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/Network/SyncBatchBuffer.swift; sourceTree = "<group>"; };
+		394CC66BD0674ABFB918A0D4 /* Core/Utilities/Logger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Core/Utilities/Logger.swift; sourceTree = "<group>"; };
+		3B77B3E684B4470BB5CB4842 /* Features/Settings/SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Features/Settings/SettingsView.swift; sourceTree = "<group>"; };
+		3B7F1333F38C4A4CB23771D8 /* HealthSyncApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthSyncApp.swift; sourceTree = "<group>"; };
+		43BDF2A5B2FA40629D3720F8 /* HealthSync.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = HealthSync.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		49F053C57EDE471F91EC1E78 /* App/AppState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App/AppState.swift; sourceTree = "<group>"; };
+		6E181AD926344512997262D0 /* Core/DTO/SyncPayload.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Core/DTO/SyncPayload.swift; sourceTree = "<group>"; };
+		72361E0855894FD8A6C67C32 /* Services/Network/HTTPSyncService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/Network/HTTPSyncService.swift; sourceTree = "<group>"; };
+		810A28AB38CA4D219CD30D3C /* Core/Models/HealthDataType.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Core/Models/HealthDataType.swift; sourceTree = "<group>"; };
+		A08B19793367427C96B16C34 /* Services/Security/CertificateService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/Security/CertificateService.swift; sourceTree = "<group>"; };
+		A90D5B642D4F4B31A7807142 /* Services/HealthKit/HealthKitService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/HealthKit/HealthKitService.swift; sourceTree = "<group>"; };
+		ACCC86A4FA3C45F7A227BE35 /* Services/HealthKit/HealthStoreProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/HealthKit/HealthStoreProtocol.swift; sourceTree = "<group>"; };
+		BCEF864AA5C94ADDB7E6A8E1 /* Features/Dashboard/DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Features/Dashboard/DashboardView.swift; sourceTree = "<group>"; };
+		CFEC3BBA21C1407E951124EA /* App/SyncCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App/SyncCoordinator.swift; sourceTree = "<group>"; };
+		D2F8D6CE10D344628208036C /* Features/Dashboard/HealthCard.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Features/Dashboard/HealthCard.swift; sourceTree = "<group>"; };
+		E4B3F6E22ACB454FACC08E19 /* Resources/Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Resources/Assets.xcassets; sourceTree = "<group>"; };
+		E4D905790DEB40D795FB5608 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		E865FAC14D97405CB0DCE206 /* Core/Models/SyncConfig.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Core/Models/SyncConfig.swift; sourceTree = "<group>"; };
+		F6ED8D6C9E134514B8F24C53 /* App/HermesSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App/HermesSettings.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		88AC1CC809474A11B2390291 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		70AB3086437A41A794D8AD39 = {
+			isa = PBXGroup;
+			children = (
+				839539A1AA204551A4BE0633 /* HealthSync */,
+				DFDF2EBC37C54A14A2CB64C0 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		839539A1AA204551A4BE0633 /* HealthSync */ = {
+			isa = PBXGroup;
+			children = (
+				49F053C57EDE471F91EC1E78 /* App/AppState.swift */,
+				F6ED8D6C9E134514B8F24C53 /* App/HermesSettings.swift */,
+				CFEC3BBA21C1407E951124EA /* App/SyncCoordinator.swift */,
+				E4D905790DEB40D795FB5608 /* ContentView.swift */,
+				216E2059DDB24FB298BE9794 /* Core/DTO/HealthSampleDTO.swift */,
+				6E181AD926344512997262D0 /* Core/DTO/SyncPayload.swift */,
+				810A28AB38CA4D219CD30D3C /* Core/Models/HealthDataType.swift */,
+				E865FAC14D97405CB0DCE206 /* Core/Models/SyncConfig.swift */,
+				0705F8E0BC7245CEB6CEBC74 /* Core/Models/SyncCursor.swift */,
+				1AC18A7000FB4713B68ECAEA /* Core/Utilities/DateRange.swift */,
+				394CC66BD0674ABFB918A0D4 /* Core/Utilities/Logger.swift */,
+				BCEF864AA5C94ADDB7E6A8E1 /* Features/Dashboard/DashboardView.swift */,
+				D2F8D6CE10D344628208036C /* Features/Dashboard/HealthCard.swift */,
+				3B7F1333F38C4A4CB23771D8 /* HealthSyncApp.swift */,
+				A90D5B642D4F4B31A7807142 /* Services/HealthKit/HealthKitService.swift */,
+				2074C96DAD3A42BCB61A5001 /* Services/HealthKit/HealthSampleMapper.swift */,
+				ACCC86A4FA3C45F7A227BE35 /* Services/HealthKit/HealthStoreProtocol.swift */,
+				72361E0855894FD8A6C67C32 /* Services/Network/HTTPSyncService.swift */,
+				3805D055A62441F08AFF236D /* Services/Network/SyncBatchBuffer.swift */,
+				A08B19793367427C96B16C34 /* Services/Security/CertificateService.swift */,
+				18D48249F3BE45D9B68517ED /* Services/Security/KeychainStore.swift */,
+				3B77B3E684B4470BB5CB4842 /* Features/Settings/SettingsView.swift */,
+				E4B3F6E22ACB454FACC08E19 /* Resources/Assets.xcassets */,
+			);
+			path = HealthSync;
+			sourceTree = "<group>";
+		};
+		DFDF2EBC37C54A14A2CB64C0 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				43BDF2A5B2FA40629D3720F8 /* HealthSync.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		AAA07165141D42AD95DCBD92 /* HealthSync */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 8A21312BE5214E03B36E6FC4 /* Build configuration list for PBXNativeTarget "HealthSync" */;
+			buildPhases = (
+				88676C96B2A348F4A9FCF13D /* Sources */,
+				88AC1CC809474A11B2390291 /* Frameworks */,
+				6BA0B13B868C468F81883179 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = HealthSync;
+			productName = HealthSync;
+			productReference = 43BDF2A5B2FA40629D3720F8 /* HealthSync.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		1E01F5B8B589466083190F65 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 2700;
+				LastUpgradeCheck = 2700;
+				TargetAttributes = {
+					AAA07165141D42AD95DCBD92 = {
+						CreatedOnToolsVersion = 27.0;
+					};
+				};
+			};
+			buildConfigurationList = 3B6D68DFA2934AB4870B60B9 /* Build configuration list for PBXProject "HealthSync" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = 70AB3086437A41A794D8AD39;
+			productRefGroup = DFDF2EBC37C54A14A2CB64C0 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				AAA07165141D42AD95DCBD92 /* HealthSync */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		6BA0B13B868C468F81883179 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				5D87A03B68964A46AAEA066A /* Resources/Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		88676C96B2A348F4A9FCF13D /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				5C02FF9E12D7471D9C2B0A1E /* App/AppState.swift in Sources */,
+				2E133C671DB84B009214CFE2 /* Features/Settings/SettingsView.swift in Sources */,
+				515F95DF12CB4073B4CE9D12 /* App/HermesSettings.swift in Sources */,
+				4839AA81F58442B9AEA1EDC4 /* App/SyncCoordinator.swift in Sources */,
+				76D84BDF37F74EE7B97F2318 /* ContentView.swift in Sources */,
+				BA4281E0C79C41A9AFF64382 /* Core/DTO/HealthSampleDTO.swift in Sources */,
+				71180C132DBB49EE92059293 /* Core/DTO/SyncPayload.swift in Sources */,
+				E0E5D8DA99094461A46B021A /* Core/Models/HealthDataType.swift in Sources */,
+				353A9BF64BF74D5F886A1DA9 /* Core/Models/SyncConfig.swift in Sources */,
+				E3AF4F3A542B45248E15CFA6 /* Core/Models/SyncCursor.swift in Sources */,
+				6FAAA16382654292BA12CFA5 /* Core/Utilities/DateRange.swift in Sources */,
+				7AE593D7583F4FB08CB04277 /* Core/Utilities/Logger.swift in Sources */,
+				E6837DD3B9A14300AE6013C6 /* Features/Dashboard/DashboardView.swift in Sources */,
+				CFBB50D1EB944286B18A55F7 /* Features/Dashboard/HealthCard.swift in Sources */,
+				54BBD078D28942779216E135 /* HealthSyncApp.swift in Sources */,
+				CC6C414BD36543E0BB946D70 /* Services/HealthKit/HealthKitService.swift in Sources */,
+				5B4C502D848D4451BF727F92 /* Services/HealthKit/HealthSampleMapper.swift in Sources */,
+				324E4B95C2D741939BEB92CE /* Services/HealthKit/HealthStoreProtocol.swift in Sources */,
+				432DD272FFCA43BDA3EBF872 /* Services/Network/HTTPSyncService.swift in Sources */,
+				654FACE924E240EEA058A392 /* Services/Network/SyncBatchBuffer.swift in Sources */,
+				DA42737C3E5A42C1A19A37EF /* Services/Security/CertificateService.swift in Sources */,
+				D2E1569D11F347E5BBDE5A37 /* Services/Security/KeychainStore.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		0E7ABB38577D45A2A74FF22B /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = HealthSync/HealthSync.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = HealthSync/Resources/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = com.example.HealthSync;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		9B950DAF135B4CEB9D95D95D /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_ENTITLEMENTS = HealthSync/HealthSync.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = HealthSync/Resources/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0.1;
+				PRODUCT_BUNDLE_IDENTIFIER = com.example.HealthSync;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		A8917B41A553478797352D3E /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+		CB72A010CD064AAA9479221F /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++20";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu17;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		3B6D68DFA2934AB4870B60B9 /* Build configuration list for PBXProject "HealthSync" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				CB72A010CD064AAA9479221F /* Debug */,
+				A8917B41A553478797352D3E /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		8A21312BE5214E03B36E6FC4 /* Build configuration list for PBXNativeTarget "HealthSync" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				9B950DAF135B4CEB9D95D95D /* Debug */,
+				0E7ABB38577D45A2A74FF22B /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 1E01F5B8B589466083190F65 /* Project object */;
+}

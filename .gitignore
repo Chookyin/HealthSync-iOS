@@ -1,0 +1,24 @@
+# Xcode
+.DS_Store
+*/xcuserdata/
+*.xcuserstate
+*.bak-*
+build/
+DerivedData/
+.build/
+
+# Swift Package Manager
+.build/
+.swiftpm/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# Env / secrets
+.env
+*.token
+
+# 用户私有文件
+*.user
