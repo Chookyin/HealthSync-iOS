@@ -38,6 +38,8 @@ uvicorn health_api_server:app --host 0.0.0.0 --port 8765
 
 `/api/ingest` 使用 Pydantic 校验 UUID、类型、时区感知日期、有限数值、fingerprint 和 ECG 波形。每日 JSON 使用文件锁与临时文件原子替换写入；损坏文件会先重命名为 `.corrupt-*` 备份，不会静默覆盖。
 
+上传协议中的 UUID 和 fingerprint 只用于去重。持久化到 `data/raw/YYYY-MM-DD.json` 时会自动精简为核心字段：`type`、`category`、`startDate`、`endDate`、`value`、`unit`、`sourceName`。睡眠、ECG 和锻炼等类型会按需保留 `valueDescription`、`metadata`、`ecgVoltageMeasurements`。旧格式会在启动时备份到 `data/.backups/raw-pre-optimized-*` 后自动迁移。
+
 ## 安全提示
 - **务必设置你的 `HEALTH_API_TOKEN`**，示例/默认值已被移除，未设置无法启动。
 - 公网部署强烈建议加 Cloudflare Tunnel / 防火墙限制端口。

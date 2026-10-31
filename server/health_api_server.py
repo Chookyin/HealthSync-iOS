@@ -10,10 +10,12 @@ from fastapi import FastAPI, Header, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 import fcntl
+import hashlib
 import json
 import math
 import os
 import secrets
+import shutil
 import tempfile
 import threading
 from datetime import datetime, timezone
@@ -159,12 +161,101 @@ def verify_token(authorization: Optional[str] = Header(None)):
 
 
 _raw_write_lock = threading.Lock()
+RAW_CORE_FIELDS = (
+    "type",
+    "category",
+    "startDate",
+    "endDate",
+    "value",
+    "unit",
+    "sourceName",
+)
+RAW_OPTIONAL_FIELDS = (
+    "valueDescription",
+    "metadata",
+    "ecgVoltageMeasurements",
+)
 
 
 def _backup_corrupt_file(path: str) -> None:
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
     backup = f"{path}.corrupt-{stamp}"
     os.replace(path, backup)
+
+
+def _slim_raw_record(item: Dict[str, Any]) -> Dict[str, Any]:
+    """Keep the public daily schema while retaining meaningful optional fields."""
+    result: Dict[str, Any] = {}
+    for key in RAW_CORE_FIELDS:
+        value = item.get(key)
+        if value is not None and value != "":
+            result[key] = value
+    for key in RAW_OPTIONAL_FIELDS:
+        value = item.get(key)
+        if value not in (None, "", [], {}):
+            result[key] = value
+    return result
+
+
+def _content_fingerprint(item: Dict[str, Any]) -> str:
+    canonical = json.dumps(
+        _slim_raw_record(item),
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _migrate_existing_raw_files() -> None:
+    """Back up and compact legacy daily files once per changed file."""
+    if not os.path.isdir(RAW_DIR):
+        return
+    backup_root = os.path.join(
+        VAULT,
+        "data",
+        ".backups",
+        f"raw-pre-optimized-{datetime.now(HEALTH_TIMEZONE).strftime('%Y%m%dT%H%M%S')}",
+    )
+    for filename in sorted(os.listdir(RAW_DIR)):
+        if not filename.endswith(".json"):
+            continue
+        path = os.path.join(RAW_DIR, filename)
+        if not os.path.isfile(path):
+            continue
+        try:
+            with open(path, "r", encoding="utf-8") as handle:
+                records = json.load(handle)
+        except (OSError, ValueError, json.JSONDecodeError):
+            continue
+        if not isinstance(records, list):
+            continue
+
+        slimmed: List[Dict[str, Any]] = []
+        seen = set()
+        changed = False
+        for item in records:
+            if not isinstance(item, dict):
+                changed = True
+                continue
+            if item.get("type") == "smokeTest":
+                changed = True
+                continue
+            normalized = _slim_raw_record(item)
+            if normalized != item:
+                changed = True
+            fingerprint = _content_fingerprint(normalized)
+            if fingerprint in seen:
+                changed = True
+                continue
+            seen.add(fingerprint)
+            slimmed.append(normalized)
+
+        if not changed:
+            continue
+        os.makedirs(backup_root, exist_ok=True)
+        shutil.copy2(path, os.path.join(backup_root, filename))
+        _atomic_write_json(path, slimmed)
 
 
 def _load_daily_samples(path: str) -> List[Dict[str, Any]]:
@@ -214,28 +305,16 @@ def _merge_daily_samples(path: str,
             fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
             try:
                 existing = _load_daily_samples(path)
-                seen = {
-                    item.get("_fingerprint")
-                    for item in existing
-                    if item.get("_fingerprint")
-                }
-                # 旧版客户端指纹在进程间不稳定；UUID 是同一 HealthKit 样本的稳定标识。
-                seen_ids = {
-                    item.get("id")
-                    for item in existing
-                    if item.get("id")
-                }
+                seen = {_content_fingerprint(item) for item in existing}
                 merged = list(existing)
                 added = 0
                 for item in items:
-                    item_id = item.get("id")
-                    if (item["_fingerprint"] in seen
-                            or (item_id and item_id in seen_ids)):
+                    normalized = _slim_raw_record(item)
+                    fingerprint = _content_fingerprint(normalized)
+                    if fingerprint in seen:
                         continue
-                    seen.add(item["_fingerprint"])
-                    if item_id:
-                        seen_ids.add(item_id)
-                    merged.append(item)
+                    seen.add(fingerprint)
+                    merged.append(normalized)
                     added += 1
                 if added:
                     _atomic_write_json(path, merged)
@@ -427,6 +506,9 @@ def get_latest(_=Depends(verify_token)):
     with open(f"{HEALTH_DIR}/{latest}") as f:
         content = f.read()
     return {"status": "ok", "file": latest, "content": content}
+
+
+_migrate_existing_raw_files()
 
 
 if __name__ == "__main__":

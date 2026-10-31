@@ -10,10 +10,10 @@ os.environ["OBSIDIAN_VAULT"] = tempfile.mkdtemp(prefix="healthsync-tests-")
 os.environ["HEALTH_API_TOKEN"] = "test-token"
 os.environ["HEALTH_TIMEZONE"] = "UTC"
 
-from health_api_server import app
+import health_api_server as server
 
 
-client = TestClient(app)
+client = TestClient(server.app)
 AUTH = {"Authorization": "Bearer test-token"}
 
 
@@ -28,6 +28,9 @@ def sample_payload(sample_id=None, fingerprint="fingerprint", start="2026-10-30T
             "endDate": start,
             "value": 1234,
             "unit": "count",
+            "sourceName": "Apple Watch",
+            "sourceBundleID": "com.apple.health",
+            "deviceName": "iPhone",
             "fingerprint": fingerprint,
         }],
         "fullSync": False,
@@ -56,7 +59,7 @@ def test_invalid_sample_is_rejected():
     assert response.status_code == 422
 
 
-def test_ingest_deduplicates_by_uuid():
+def test_ingest_deduplicates_slim_records():
     sample_id = str(uuid.uuid4())
     first = client.post(
         "/api/ingest",
@@ -75,6 +78,21 @@ def test_ingest_deduplicates_by_uuid():
     assert duplicate.json()["accepted"] == 0
     assert duplicate.json()["skipped"] == 1
 
+    output = Path(os.environ["OBSIDIAN_VAULT"]) / "data/raw/2026-10-30.json"
+    records = json.loads(output.read_text(encoding="utf-8"))
+    record = next(
+        item for item in records
+        if item["type"] == "HKQuantityTypeIdentifierStepCount"
+        and item["startDate"].startswith("2026-10-30T12:00:00")
+    )
+    assert set(record) == {
+        "type", "category", "startDate", "endDate",
+        "value", "unit", "sourceName",
+    }
+    assert "id" not in record
+    assert "fingerprint" not in record
+    assert "sourceBundleID" not in record
+
 
 def test_ecg_waveform_payload_is_preserved():
     sample_id = str(uuid.uuid4())
@@ -92,8 +110,46 @@ def test_ecg_waveform_payload_is_preserved():
     assert response.status_code == 200
     output = Path(os.environ["OBSIDIAN_VAULT"]) / "data/raw/2026-10-30.json"
     records = json.loads(output.read_text(encoding="utf-8"))
-    record = next(item for item in records if item["id"] == sample_id)
+    record = next(item for item in records if item["type"] == "HKElectrocardiogramType")
     assert record["ecgVoltageMeasurements"][0]["voltageMicrovolts"] == 12.5
+
+
+def test_legacy_daily_files_are_migrated_and_backed_up():
+    raw_dir = Path(os.environ["OBSIDIAN_VAULT"]) / "data/raw"
+    raw_dir.mkdir(parents=True, exist_ok=True)
+    legacy_path = raw_dir / "2026-11-01.json"
+    legacy_path.write_text(json.dumps([{
+        "id": str(uuid.uuid4()),
+        "type": "HKQuantityTypeIdentifierHeartRate",
+        "category": "heart",
+        "startDate": "2026-11-01T12:00:00Z",
+        "endDate": "2026-11-01T12:00:00Z",
+        "value": 68,
+        "unit": "count/min",
+        "sourceName": "Apple Watch",
+        "sourceBundleID": "com.apple.health",
+        "deviceName": "Watch",
+        "fingerprint": "legacy",
+        "_fingerprint": "legacy",
+    }]), encoding="utf-8")
+
+    server._migrate_existing_raw_files()
+    migrated = json.loads(legacy_path.read_text(encoding="utf-8"))
+    assert migrated == [{
+        "type": "HKQuantityTypeIdentifierHeartRate",
+        "category": "heart",
+        "startDate": "2026-11-01T12:00:00Z",
+        "endDate": "2026-11-01T12:00:00Z",
+        "value": 68,
+        "unit": "count/min",
+        "sourceName": "Apple Watch",
+    }]
+    backups = list(
+        (Path(os.environ["OBSIDIAN_VAULT"]) / "data/.backups").glob(
+            "raw-pre-optimized-*/2026-11-01.json"
+        )
+    )
+    assert backups
 
 
 def test_corrupt_file_is_backed_up():

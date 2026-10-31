@@ -102,30 +102,21 @@ Xcode 里：
 
 ## 数据模型
 
-样本格式（与后端直接对应）：
+上传请求保留 UUID 和 fingerprint，用于服务端幂等去重。写入 `data/raw/` 时自动精简为以下格式：
 
 ```json
 {
-  "device": {"model": "iPhone17,2", "os": "27.0", "app": "HealthSync/1.0"},
-  "batch": [
-    {
-      "id": "UUID",
-      "type": "HKQuantityTypeIdentifierHeartRate",
-      "category": "heart",
-      "startDate": "2026-09-01T08:00:00Z",
-      "endDate": "2026-09-01T08:00:01Z",
-      "value": 62.0,
-      "unit": "count/min",
-      "sourceName": "Apple Watch",
-      "sourceBundleID": "com.apple.health",
-      "fingerprint": "sha256..."
-    }
-  ],
-  "range": {"start": "...", "end": "..."},
-  "cursorFingerprint": "...",
-  "fullSync": false
+  "type": "HKQuantityTypeIdentifierHeartRate",
+  "category": "heart",
+  "startDate": "2026-10-30T22:08:32Z",
+  "endDate": "2026-10-30T22:08:32Z",
+  "value": 68.0,
+  "unit": "count/min",
+  "sourceName": "Chookyin的Apple Watch"
 }
 ```
+
+睡眠、ECG、锻炼等类型仅额外保留有意义字段，例如 `valueDescription`、`metadata` 或 `ecgVoltageMeasurements`。旧文件会在服务启动时先备份到 `data/.backups/raw-pre-optimized-*`，再自动迁移。
 
 后端按 `startDate` 和 `HEALTH_TIMEZONE`（默认 UTC）落到 `data/raw/YYYY-MM-DD.json`。
 
