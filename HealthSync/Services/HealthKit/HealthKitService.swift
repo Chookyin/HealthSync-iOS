@@ -5,11 +5,9 @@ import HealthKit
 /// 以 actor 隔离保证健康数据只被顺序消费；HKHealthStore 非 Sendable，故仅在内部访问。
 public actor HealthKitService {
     private let store: HKHealthStore
-    private let config: SyncConfig
 
-    public init(store: HKHealthStore = HKHealthStore(), config: SyncConfig = .default) {
+    public init(store: HKHealthStore = HKHealthStore()) {
         self.store = store
-        self.config = config
     }
 
     // MARK: - 授权（必须在主线程，否则 HealthKit 授权回调不返回）
@@ -31,7 +29,7 @@ public actor HealthKitService {
     /// 读取用户的生物学性别（特征类型，仅读本地，不触发授权弹窗）。
     public func readBiologicalSex() async -> HKBiologicalSex {
         do {
-            let sex = try await store.biologicalSex()
+            let sex = try store.biologicalSex()
             return sex.biologicalSex
         } catch {
             return .notSet
@@ -40,72 +38,67 @@ public actor HealthKitService {
 
     // MARK: - 授权辅助
 
-    /// 为指定类型请求只读授权。
-    /// 只把「可授权读取」的标准类型交给 `requestAuthorization`；特殊类型（如
-    /// `HKWorkoutType` / `HKElectrocardiogramType`）在 iOS 27 上混入 read 集合会抛错，
-    /// 导致整个授权请求失败，故过滤掉。已授权的类型请求后返回 true 不抛错。
+    /// 为指定类型请求只读授权，包括 workout 和 ECG 等特殊 HKSampleType。
     @MainActor
     public func requestReadAuthorization(for types: Set<HealthDataType>) async throws {
-        let authorizable = types.filter(\.isRequestableReadType)
-        let readTypes = Set(authorizable.compactMap { $0.objectType })
-        // 全部被过滤时无需（也无法）发起授权请求。
-        guard !readTypes.isEmpty else { return }
+        let readTypes = Set(types.compactMap { $0.objectType })
+        guard !readTypes.isEmpty else {
+            throw HealthAuthorizationError.noReadableTypes
+        }
         try await requestAuthorization(toShare: [], read: readTypes)
-
-        // workout 读授权单独请求：HKWorkoutType 混入批量 read 集合在 iOS 27 会抛错，
-        // 单独一次请求既不拖垮批量授权，又能拿到训练记录读权限。
-        if types.contains(.workouts) {
-            try? await requestAuthorization(toShare: [], read: [HKObjectType.workoutType()])
-        }
-    }
-
-    /// 批量查询指定类型的授权状态。
-    /// 只对「可授权读取」的标准类型（`isRequestableReadType == true`）查询授权状态，
-    /// 跳过特殊类型（如 `workouts` 的 `HKWorkoutType`、`electrocardiogram` 的
-    /// `HKElectrocardiogramType`），它们不是普通 `HKObjectType`，对它们调用
-    /// `authorizationStatus(for:)` 会 crash / 异常，从而拖垮整批授权判断。
-    public func authStatus(for types: [HealthDataType]) -> [HealthDataType: HealthAuthStatus] {
-        var result: [HealthDataType: HealthAuthStatus] = [:]
-        for type in types where type.isRequestableReadType {
-            guard let objType = type.objectType else { continue }
-            let status = store.authorizationStatus(for: objType)
-            switch status {
-            case .notDetermined: result[type] = .notDetermined
-            case .sharingAuthorized: result[type] = .authorized
-            case .sharingDenied: result[type] = .denied
-            @unknown default: result[type] = .restricted
-            }
-        }
-        return result
     }
 
     // MARK: - 查询
 
-    /// 全量/增量查询：按启用类型返回样本映射后的 DTO 数组。
-    /// - Parameters:
-    ///   - types: 启用的数据类型。
-    ///   - startDate: 查询起点（增量用游标，全量用回溯起点）。
-    ///   - endDate: 查询终点（通常为 now）。
-    ///   - progress: 类型维度的进度回调（0...1）。
-    public func fetchAll(types: Set<HealthDataType>,
-                         startDate: Date,
-                         endDate: Date,
-                         progress: ((Double) -> Void)? = nil) async throws -> [HealthSampleDTO] {
-        let sortedTypes = types.sorted { $0.rawValue < $1.rawValue }
-        var allDTOs: [HealthSampleDTO] = []
+    /// 逐页查询并立即交给调用方上传，避免把全部历史样本放入内存。
+    /// 同一 `HKObjectType` 只查询一次，睡眠阶段会在客户端按用户选择过滤。
+    public func fetchPages(types: Set<HealthDataType>,
+                           startDate: Date,
+                           endDate: Date,
+                           pageSize: Int,
+                           progress: (@Sendable (HealthDataType, Double) -> Void)? = nil,
+                           handler: @escaping @MainActor @Sendable ([HealthSampleDTO]) async throws -> Void) async throws -> Int {
+        let groups = Self.queryGroups(for: types)
+        guard !groups.isEmpty else { return 0 }
+
+        let limit = max(1, pageSize)
+        let completedTypes = groups.count
         var completed = 0
+        var totalSamples = 0
         let predicate = HKQuery.predicateForSamples(withStart: startDate,
                                                     end: endDate,
                                                     options: [.strictStartDate, .strictEndDate])
 
-        for type in sortedTypes {
-            guard let objType = type.objectType else { continue }
-            guard let hkSampleType = objType as? HKSampleType else { continue }
-
+        for group in groups {
+            try Task.checkCancellation()
+            progress?(group.displayType, Double(completed) / Double(completedTypes))
+            var anchor: HKQueryAnchor?
             do {
-                let samples = try await queryAll(sampleType: hkSampleType, predicate: predicate)
-                for sample in samples {
-                    allDTOs.append(HealthSampleMapper.map(sample))
+                while true {
+                    try Task.checkCancellation()
+                    let page = try await queryPage(
+                        sampleType: group.sampleType,
+                        predicate: predicate,
+                        anchor: anchor,
+                        limit: limit
+                    )
+                    if page.totalCount == 0 { break }
+
+                    let filtered = Self.filteredSamples(
+                        page.samples,
+                        requestedTypes: group.requestedTypes
+                    )
+                    if !filtered.isEmpty {
+                        let dtos = try await mapSamples(filtered)
+                        totalSamples += dtos.count
+                        try await handler(dtos)
+                    }
+
+                    guard page.totalCount == limit else { break }
+                    guard let nextAnchor = page.anchor else {
+                        throw HealthQueryPagingError.missingAnchor
+                    }
+                    anchor = nextAnchor
                 }
             } catch let err as NSError {
                 // iOS 隐私设计：对「未授权读取」的类型，HealthKit 查询会抛
@@ -114,18 +107,18 @@ public actor HealthKitService {
                 if err.domain == HKErrorDomain
                     && (err.code == HKError.errorAuthorizationNotDetermined.rawValue
                         || err.code == HKError.errorAuthorizationDenied.rawValue) {
+                    completed += 1
+                    progress?(group.displayType, Double(completed) / Double(completedTypes))
                     continue
                 }
                 throw err
             }
 
             completed += 1
-            if let progress {
-                progress(Double(completed) / Double(sortedTypes.count))
-            }
+            progress?(group.displayType, Double(completed) / Double(completedTypes))
         }
 
-        return allDTOs
+        return totalSamples
     }
 
     // MARK: - 数据完整性标注
@@ -157,7 +150,7 @@ public actor HealthKitService {
     /// 并行发起查询，避免逐个串行过慢；返回「存在数据」的类型集合与各类型最近一次信息。
     public func typesWithSamples(for types: [HealthDataType],
                                  concurrency: Int = 4) async -> [HealthDataType: (hasData: Bool, latestDate: Date?, latestValue: String?)] {
-        let candidates = types.filter(\.isRequestableReadType)
+        let candidates = types
         var result: [HealthDataType: (hasData: Bool, latestDate: Date?, latestValue: String?)] = [:]
         let limit = max(1, concurrency)
 
@@ -380,64 +373,140 @@ public actor HealthKitService {
 
     // MARK: - 私有
 
-    private func predicate(start: Date, end: Date) -> NSPredicate {
-        HKQuery.predicateForSamples(withStart: start, end: end, options: [.strictStartDate, .strictEndDate])
+    private struct AnchorPage {
+        var samples: [HKSample]
+        var totalCount: Int
+        var anchor: HKQueryAnchor?
     }
 
-    /// 分批翻页查询全部样本（limit 分批，时间边界推进避免内存峰值）。
-    private func queryAll(sampleType: HKSampleType,
-                          predicate: NSPredicate) async throws -> [HKSample] {
-        var all: [HKSample] = []
-        var cursorStart: Date? = nil
-        var lastUUID: UUID? = nil
+    private struct QueryGroup {
+        var displayType: HealthDataType
+        var requestedTypes: Set<HealthDataType>
+        var sampleType: HKSampleType
+    }
 
-        while true {
-            let start = cursorStart
-            let result = try await queryPage(sampleType: sampleType,
-                                             predicate: predicate,
-                                             start: start,
-                                             lastUUID: lastUUID)
-
-            if result.isEmpty { break }
-            all.append(contentsOf: result)
-
-            guard result.count == config.batchSize else { break }
-            let lastSample = result.last!
-            cursorStart = lastSample.startDate
-            lastUUID = lastSample.uuid
+    private static func queryGroups(for types: Set<HealthDataType>) -> [QueryGroup] {
+        var grouped: [String: (displayType: HealthDataType,
+                                requestedTypes: Set<HealthDataType>,
+                                sampleType: HKSampleType)] = [:]
+        for type in types.sorted(by: { $0.rawValue < $1.rawValue }) {
+            guard let objectType = type.objectType,
+                  let sampleType = objectType as? HKSampleType else {
+                continue
+            }
+            let identifier = objectType.identifier
+            if var existing = grouped[identifier] {
+                existing.requestedTypes.insert(type)
+                if type == .sleepAnalysis {
+                    existing.displayType = .sleepAnalysis
+                }
+                grouped[identifier] = existing
+            } else {
+                grouped[identifier] = (type, [type], sampleType)
+            }
         }
-        return all
+        return grouped.values
+            .map {
+                QueryGroup(displayType: $0.displayType,
+                           requestedTypes: $0.requestedTypes,
+                           sampleType: $0.sampleType)
+            }
+            .sorted { $0.displayType.rawValue < $1.displayType.rawValue }
     }
 
-    /// 查询单页样本（同步转 async）。
+    private static func filteredSamples(_ samples: [HKSample],
+                                        requestedTypes: Set<HealthDataType>) -> [HKSample] {
+        if requestedTypes.contains(.sleepAnalysis) {
+            return samples
+        }
+        let allowedStages = Set(requestedTypes.compactMap(\.sleepStageValue))
+        guard !allowedStages.isEmpty else { return samples }
+        return samples.filter { sample in
+            guard let category = sample as? HKCategorySample,
+                  category.categoryType.identifier
+                    == HKObjectType.categoryType(forIdentifier: .sleepAnalysis)?.identifier else {
+                return true
+            }
+            return allowedStages.contains(category.value)
+        }
+    }
+
+    private func mapSamples(_ samples: [HKSample]) async throws -> [HealthSampleDTO] {
+        var result: [HealthSampleDTO] = []
+        result.reserveCapacity(samples.count)
+        for sample in samples {
+            if let electrocardiogram = sample as? HKElectrocardiogram {
+                let voltages = try await voltageMeasurements(for: electrocardiogram)
+                result.append(HealthSampleMapper.map(
+                    electrocardiogram,
+                    ecgVoltageMeasurements: voltages
+                ))
+            } else {
+                result.append(HealthSampleMapper.map(sample))
+            }
+        }
+        return result
+    }
+
+    private func voltageMeasurements(
+        for electrocardiogram: HKElectrocardiogram
+    ) async throws -> [HealthSampleDTO.ECGVoltage] {
+        var result: [HealthSampleDTO.ECGVoltage] = []
+        result.reserveCapacity(electrocardiogram.numberOfVoltageMeasurements)
+        let descriptor = HKElectrocardiogramQueryDescriptor(electrocardiogram)
+        for try await measurement in descriptor.results(for: store) {
+            try Task.checkCancellation()
+            let unit = HKUnit.voltUnit(with: .micro)
+            guard let quantity = measurement.quantity(for: .appleWatchSimilarToLeadI),
+                  quantity.is(compatibleWith: unit) else {
+                continue
+            }
+            result.append(HealthSampleDTO.ECGVoltage(
+                timeSinceSampleStart: measurement.timeSinceSampleStart,
+                voltageMicrovolts: quantity.doubleValue(for: unit),
+                lead: "appleWatchSimilarToLeadI"
+            ))
+        }
+        return result
+    }
+
+    /// 查询单页样本。page anchor 只在当前同步任务内使用。
     private func queryPage(sampleType: HKSampleType,
                            predicate: NSPredicate,
-                           start: Date?,
-                           lastUUID: UUID?) async throws -> [HKSample] {
-        let pagePredicate: NSPredicate
-        if let start {
-            var predicates = [predicate]
-            // 时间边界推进：取 startDate 严格晚于游标时间
-            predicates.append(HKQuery.predicateForSamples(withStart: start, end: nil))
-            pagePredicate = NSCompoundPredicate(andPredicateWithSubpredicates: predicates)
-        } else {
-            pagePredicate = predicate
-        }
-
-        let sort = [NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)]
-
-        return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<[HKSample], Error>) in
-            let query = HKSampleQuery(sampleType: sampleType,
-                                      predicate: pagePredicate,
-                                      limit: config.batchSize,
-                                      sortDescriptors: sort) { _, samples, error in
+                           anchor: HKQueryAnchor?,
+                           limit: Int) async throws -> AnchorPage {
+        try await withCheckedThrowingContinuation { continuation in
+            let query = HKAnchoredObjectQuery(type: sampleType,
+                                              predicate: predicate,
+                                              anchor: anchor,
+                                              limit: limit) { _, samples, deletedObjects, newAnchor, error in
                 if let error {
                     continuation.resume(throwing: error)
                     return
                 }
-                continuation.resume(returning: samples ?? [])
+                let added = samples ?? []
+                let deletedCount = deletedObjects?.count ?? 0
+                continuation.resume(returning: AnchorPage(samples: added,
+                                                         totalCount: added.count + deletedCount,
+                                                         anchor: newAnchor))
             }
             store.execute(query)
         }
+    }
+}
+
+private enum HealthQueryPagingError: LocalizedError {
+    case missingAnchor
+
+    var errorDescription: String? {
+        "HealthKit 分页失败：查询未返回下一页游标"
+    }
+}
+
+private enum HealthAuthorizationError: LocalizedError {
+    case noReadableTypes
+
+    var errorDescription: String? {
+        "当前 iOS 版本没有可请求的健康数据类型"
     }
 }

@@ -11,8 +11,16 @@ public enum SyncPhase: Sendable, Equatable {
     case failed(String)
 }
 
+/// HealthKit 不会向 App 透露只读权限的最终授予状态。
+public enum HealthAuthorizationState: Sendable, Equatable {
+    case notRequested
+    case requested
+    case unavailable
+}
+
 /// 全局可观察状态。单一共享实例（`shared`），UI 与同步逻辑读同一份，
 /// 避免「环境注入的实例」与「SyncCoordinator 内部实例」不同步导致授权状态/进度不刷新。
+@MainActor
 @Observable
 public final class AppState {
     /// 全局唯一状态实例（UI 环境注入与 SyncCoordinator 共用）。
@@ -25,7 +33,7 @@ public final class AppState {
     public var lastError: String?
     public var totalSamples: Int = 0
     public var uploadedBatches: Int = 0
-    public var isHealthAuthorized: Bool = false
+    public var healthAuthorizationState: HealthAuthorizationState = .notRequested
     /// 用户生物学性别（来自 HealthKit 特征，用于按性别过滤数据类型）。
     public var biologicalSex: HKBiologicalSex = .notSet
 

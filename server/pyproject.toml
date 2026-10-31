@@ -1,0 +1,14 @@
+[project]
+name = "healthsync-server"
+version = "2.0.0"
+requires-python = ">=3.9"
+dependencies = [
+  "fastapi>=0.110,<1",
+  "pydantic>=2.7,<3",
+  "uvicorn>=0.29,<1",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
+pythonpath = ["."]

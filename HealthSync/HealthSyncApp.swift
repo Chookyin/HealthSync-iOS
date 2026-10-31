@@ -3,7 +3,7 @@ import SwiftUI
 @main
 struct HealthSyncApp: App {
     @Environment(\.scenePhase) private var scenePhase
-    @State private var settings = HermesSettings()
+    @State private var settings = HermesSettings.shared
     // 用共享单例，与 SyncCoordinator 内部状态同源，确保授权/进度刷新到 UI。
     private let state = AppState.shared
 

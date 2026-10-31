@@ -13,7 +13,7 @@
 ## 架构
 
 ```text
-┌─────────────┐   HTTPS (Bearer Token)   ┌──────────────────┐
+┌─────────────┐ HTTPS/本地HTTP + Token  ┌──────────────────┐
 │   iPhone     │ ───────────────────────▶ │   Server (8765)  │
 │  HealthSync  │                          │  health_api_server│
 │   (SwiftUI)  │ ◀─────────────────────── │  (FastAPI + uvicorn) │
@@ -40,6 +40,8 @@
 cd server/
 export HEALTH_API_TOKEN="换成你的强随机 Token"
 export OBSIDIAN_VAULT="$HOME/Library/Mobile Documents/iCloud~md~obsidian/Documents/Health"
+python3 -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
 uvicorn health_api_server:app --host 0.0.0.0 --port 8765
 ```
@@ -61,7 +63,7 @@ nohup cloudflared tunnel --url http://127.0.0.1:8765 --no-autoupdate &
 
 ### 2. 构建 iOS App
 
-前置：macOS + Xcode 16+，iPhone 真机（iOS 17+，HealthKit 可用）。
+前置：macOS + Xcode 16+，iPhone 真机（iOS 18+，HealthKit 可用）。
 
 ```bash
 open HealthSync.xcodeproj
@@ -78,7 +80,7 @@ Xcode 里：
 
 | 字段 | 值 |
 |---|---|
-| 服务器地址 | `https://你的隧道域名` 或局域网 `http://192.168.x.x` |
+| 服务器地址 | `你的隧道域名`，或粘贴完整 URL（如 `http://192.168.x.x:8765`） |
 | 端口 | `443`（HTTPS）或 `8765`（局域网 HTTP） |
 | API Token | 与服务器 `HEALTH_API_TOKEN` 一致 |
 
@@ -89,9 +91,11 @@ Xcode 里：
 ## 功能
 
 - [x] 全量 / 增量 / 强制全量三种同步模式
-- [x] 数据指纹去重（幂等重放）
-- [x] 浏览器内自启 + 后台重试
-- [x] 设置持久化（Keychain 存 Token、UserDefaults 存配置）
+- [x] SHA-256 数据指纹 + UUID 去重（幂等重放）
+- [x] 打开 App 自动同步 + 上传失败自动重试
+- [x] 逐页查询、逐页上传，避免全量历史占用内存
+- [x] ECG 分类、平均心率、采样率与电压波形
+- [x] 设置持久化（Keychain 存连接信息、UserDefaults 存同步配置）
 - [x] 服务器地址 / Token 可在设置页动态改，无需重编译
 - [x] 局域网直连 + 公网隧道双模式
 - [x] 无任何第三方 SDK / 广告 / 埋点
@@ -107,7 +111,7 @@ Xcode 里：
     {
       "id": "UUID",
       "type": "HKQuantityTypeIdentifierHeartRate",
-      "category": "cardiac",
+      "category": "heart",
       "startDate": "2026-09-01T08:00:00Z",
       "endDate": "2026-09-01T08:00:01Z",
       "value": 62.0,
@@ -123,7 +127,7 @@ Xcode 里：
 }
 ```
 
-后端按 `startDate` 落到 `data/raw/YYYY-MM-DD.json`。
+后端按 `startDate` 和 `HEALTH_TIMEZONE`（默认 UTC）落到 `data/raw/YYYY-MM-DD.json`。
 
 ## 自定义坑（亲身经历）
 
@@ -146,6 +150,7 @@ Xcode 里：
 .
 ├── HealthSync.xcodeproj      # Xcode 工程
 ├── HealthSync/                # iOS 源码（SwiftUI）
+├── HealthSyncTests/           # XCTest 单元测试
 │   ├── App/                   # App 入口、同步协调器、设置模型
 │   ├── Core/                  # 模型、DTO、工具
 │   ├── Features/              # 设置页 / 数据看板
@@ -153,9 +158,29 @@ Xcode 里：
 │   └── Resources/             # Info.plist、图标
 └── server/
     ├── health_api_server.py   # FastAPI 接收端
-    ├── requirements.txt       # fastapi / uvicorn
+    ├── requirements-dev.txt   # 服务端测试依赖
+    ├── tests/                 # pytest 服务端测试
     └── README.md              # 服务端部署详细文档
 ```
+
+## 测试
+
+```bash
+# iOS：本地编译 XCTest
+xcodebuild build-for-testing \
+  -project HealthSync.xcodeproj \
+  -scheme HealthSync \
+  -destination 'generic/platform=iOS' \
+  CODE_SIGNING_ALLOWED=NO
+
+# Server
+cd server
+python3 -m venv .venv
+.venv/bin/pip install -r requirements-dev.txt
+.venv/bin/pytest
+```
+
+GitHub Actions 会运行 Swift 6 构建、iOS 模拟器 XCTest，以及 Python 3.9/3.12 服务端测试。
 
 > `HealthSync/Features/Dashboard/` 等看板 UI 依赖本地自定义解析器，服务端未附带；只依赖 `data/raw` 的数据流已完整可跑。
 

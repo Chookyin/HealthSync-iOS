@@ -15,6 +15,10 @@ DerivedData/
 __pycache__/
 *.pyc
 .venv/
+.local/
+.pytest_cache/
+server/.server.log
+server/screenlog.*
 
 # Env / secrets
 .env

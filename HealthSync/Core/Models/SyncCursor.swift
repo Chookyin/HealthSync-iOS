@@ -5,11 +5,16 @@ import Foundation
 public struct SyncCursor: Codable, Sendable, Equatable {
     /// 最后成功同步时间（增量查询起点）。
     public var lastSyncedAt: Date?
+    /// 最后一次完整成功同步的完成时间，用于 UI 恢复。
+    public var lastSuccessfulAt: Date?
     /// 去重指纹（type + source 稳定哈希），防止重复上传。
     public var dedupFingerprint: String?
 
-    public init(lastSyncedAt: Date? = nil, dedupFingerprint: String? = nil) {
+    public init(lastSyncedAt: Date? = nil,
+                lastSuccessfulAt: Date? = nil,
+                dedupFingerprint: String? = nil) {
         self.lastSyncedAt = lastSyncedAt
+        self.lastSuccessfulAt = lastSuccessfulAt
         self.dedupFingerprint = dedupFingerprint
     }
 
@@ -18,6 +23,7 @@ public struct SyncCursor: Codable, Sendable, Equatable {
     /// 重置游标（用于强制全量）。
     public mutating func reset() {
         lastSyncedAt = nil
+        lastSuccessfulAt = nil
         dedupFingerprint = nil
     }
 }

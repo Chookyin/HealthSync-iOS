@@ -3,13 +3,22 @@
 接收 iPhone 快捷指令推送的 Apple Health 数据，写入 Obsidian Vault
 
 启动: uvicorn health_api_server:app --host 0.0.0.0 --port 8765
-Auth: 环境变量 HEALTH_API_TOKEN（必填，未设置为空）
+Auth: 环境变量 HEALTH_API_TOKEN（必填，未设置时拒绝启动）
 """
 
 from fastapi import FastAPI, Header, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
-import os, json, threading
-from datetime import datetime
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+import fcntl
+import json
+import math
+import os
+import secrets
+import tempfile
+import threading
+from datetime import datetime, timezone
+from typing import Any, Dict, List, Optional
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 VAULT = os.environ.get("OBSIDIAN_VAULT", "")
 if not VAULT:
@@ -23,25 +32,228 @@ BODY_DIR = f"{VAULT}/data/body"
 HEALTH_VAULT = VAULT
 RAW_DIR = f"{HEALTH_VAULT}/data/raw"
 
-VALID_TOKEN = os.environ.get("HEALTH_API_TOKEN", "")
+VALID_TOKEN = os.environ.get("HEALTH_API_TOKEN", "").strip()
+if not VALID_TOKEN:
+    print("ERROR: HEALTH_API_TOKEN must be set", flush=True)
+    raise SystemExit(1)
+
+try:
+    HEALTH_TIMEZONE = ZoneInfo(os.environ.get("HEALTH_TIMEZONE", "UTC"))
+except ZoneInfoNotFoundError:
+    print("ERROR: invalid HEALTH_TIMEZONE", flush=True)
+    raise SystemExit(1)
+
+CORS_ORIGINS = [
+    origin.strip()
+    for origin in os.environ.get("HEALTH_CORS_ORIGINS", "").split(",")
+    if origin.strip()
+]
+
+
+class DevicePayload(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    model: str = Field(default="", max_length=256)
+    os: str = Field(default="", max_length=128)
+    app: str = Field(default="", max_length=256)
+
+
+class RangePayload(BaseModel):
+    start: datetime
+    end: datetime
+
+    @field_validator("start", "end")
+    @classmethod
+    def require_timezone(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("range dates must include a timezone")
+        return value
+
+    @model_validator(mode="after")
+    def validate_date_range(self):
+        if self.end < self.start:
+            raise ValueError("range end must not be earlier than start")
+        return self
+
+
+class ECGVoltagePayload(BaseModel):
+    timeSinceSampleStart: float
+    voltageMicrovolts: float
+    lead: str = Field(min_length=1, max_length=128)
+
+    @field_validator("timeSinceSampleStart", "voltageMicrovolts")
+    @classmethod
+    def validate_finite_values(cls, value: float) -> float:
+        if not math.isfinite(value):
+            raise ValueError("ECG voltage values must be finite")
+        return value
+
+
+class HealthSamplePayload(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    id: str = Field(min_length=1, max_length=256)
+    type: str = Field(min_length=1, max_length=256)
+    category: str = Field(default="unknown", max_length=128)
+    startDate: datetime
+    endDate: datetime
+    value: Optional[float] = None
+    unit: Optional[str] = Field(default=None, max_length=128)
+    valueDescription: Optional[str] = Field(default=None, max_length=4096)
+    sourceName: Optional[str] = Field(default=None, max_length=512)
+    sourceBundleID: Optional[str] = Field(default=None, max_length=512)
+    deviceName: Optional[str] = Field(default=None, max_length=512)
+    metadata: Optional[Dict[str, str]] = None
+    ecgVoltageMeasurements: Optional[List[ECGVoltagePayload]] = Field(
+        default=None,
+        max_length=50_000,
+    )
+    fingerprint: str = Field(min_length=1, max_length=512)
+
+    @field_validator("startDate", "endDate")
+    @classmethod
+    def require_timezone(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("HealthKit dates must include a timezone")
+        return value
+
+    @field_validator("value")
+    @classmethod
+    def validate_finite_value(cls, value: Optional[float]) -> Optional[float]:
+        if value is not None and not math.isfinite(value):
+            raise ValueError("value must be finite")
+        return value
+
+    @model_validator(mode="after")
+    def validate_date_range(self):
+        if self.endDate < self.startDate:
+            raise ValueError("endDate must not be earlier than startDate")
+        return self
+
+
+class IngestPayload(BaseModel):
+    model_config = ConfigDict(extra="allow")
+
+    device: Optional[DevicePayload] = None
+    batch: List[HealthSamplePayload] = Field(default_factory=list, max_length=5000)
+    range: Optional[RangePayload] = None
+    cursorFingerprint: Optional[str] = Field(default=None, max_length=512)
+    fullSync: bool = False
 
 app = FastAPI(title="Health API", version="2.0")
 
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+if CORS_ORIGINS:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=CORS_ORIGINS,
+        allow_credentials=False,
+        allow_methods=["GET", "POST"],
+        allow_headers=["Authorization", "Content-Type"],
+    )
 
 
-def verify_token(authorization: str | None = Header(None)):
-    if not authorization or authorization != f"Bearer {VALID_TOKEN}":
+def verify_token(authorization: Optional[str] = Header(None)):
+    expected = f"Bearer {VALID_TOKEN}"
+    if not authorization or not secrets.compare_digest(authorization, expected):
         raise HTTPException(status_code=401, detail="Unauthorized")
 
 
+_raw_write_lock = threading.Lock()
+
+
+def _backup_corrupt_file(path: str) -> None:
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+    backup = f"{path}.corrupt-{stamp}"
+    os.replace(path, backup)
+
+
+def _load_daily_samples(path: str) -> List[Dict[str, Any]]:
+    if not os.path.exists(path):
+        return []
+    try:
+        with open(path, "r", encoding="utf-8") as handle:
+            data = json.load(handle)
+        if not isinstance(data, list):
+            raise ValueError("daily JSON root must be a list")
+        if any(not isinstance(item, dict) for item in data):
+            raise ValueError("daily JSON items must be objects")
+        return data
+    except OSError:
+        raise
+    except (ValueError, json.JSONDecodeError):
+        _backup_corrupt_file(path)
+        return []
+
+
+def _atomic_write_json(path: str, data: List[Dict[str, Any]]) -> None:
+    directory = os.path.dirname(path)
+    fd, temporary = tempfile.mkstemp(
+        dir=directory,
+        prefix=f".{os.path.basename(path)}.",
+        suffix=".tmp",
+    )
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            json.dump(data, handle, ensure_ascii=False, indent=1, allow_nan=False)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, path)
+    except Exception:
+        try:
+            os.unlink(temporary)
+        except FileNotFoundError:
+            pass
+        raise
+
+
+def _merge_daily_samples(path: str,
+                         items: List[Dict[str, Any]]) -> int:
+    lock_path = os.path.join(RAW_DIR, ".ingest.lock")
+    with _raw_write_lock:
+        with open(lock_path, "a+", encoding="utf-8") as lock_file:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+            try:
+                existing = _load_daily_samples(path)
+                seen = {
+                    item.get("_fingerprint")
+                    for item in existing
+                    if item.get("_fingerprint")
+                }
+                # 旧版客户端指纹在进程间不稳定；UUID 是同一 HealthKit 样本的稳定标识。
+                seen_ids = {
+                    item.get("id")
+                    for item in existing
+                    if item.get("id")
+                }
+                merged = list(existing)
+                added = 0
+                for item in items:
+                    item_id = item.get("id")
+                    if (item["_fingerprint"] in seen
+                            or (item_id and item_id in seen_ids)):
+                        continue
+                    seen.add(item["_fingerprint"])
+                    if item_id:
+                        seen_ids.add(item_id)
+                    merged.append(item)
+                    added += 1
+                if added:
+                    _atomic_write_json(path, merged)
+                return added
+            finally:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+
+
+def _safe_markdown_date(value: Any) -> str:
+    candidate = str(value or "")
+    try:
+        return datetime.strptime(candidate, "%Y-%m-%d").strftime("%Y-%m-%d")
+    except ValueError:
+        return datetime.now(HEALTH_TIMEZONE).strftime("%Y-%m-%d")
+
+
 @app.post("/api/ingest")
-async def ingest_health(payload: dict, _=Depends(verify_token)):
+async def ingest_health(payload: IngestPayload, _=Depends(verify_token)):
     """HealthSync iOS App 全量健康样本接收。
 
     payload 结构（与 iOS HealthSampleDTO / SyncPayload 对应）：
@@ -62,8 +274,8 @@ async def ingest_health(payload: dict, _=Depends(verify_token)):
     }
     落盘：Health vault data/raw/YYYY-MM-DD.json（全量明细，去重 by fingerprint）。
     """
-    batch = payload.get("batch", [])
-    if not isinstance(batch, list) or not batch:
+    batch = payload.batch
+    if not batch:
         return {"status": "ok", "accepted": 0, "skipped": 0, "note": "empty batch"}
 
     os.makedirs(RAW_DIR, exist_ok=True)
@@ -71,39 +283,18 @@ async def ingest_health(payload: dict, _=Depends(verify_token)):
     skipped = 0
     by_day: dict[str, list] = {}
 
-    for item in batch:
-        if not isinstance(item, dict):
-            skipped += 1
-            continue
-        start = item.get("startDate", "")
-        day = start[:10] if start else datetime.now().strftime("%Y-%m-%d")
-        fp = item.get("fingerprint") or f"{item.get('type')}|{start}"
-        item["_fingerprint"] = fp
+    for sample in batch:
+        item = sample.model_dump(mode="json", exclude_none=True)
+        day = sample.startDate.astimezone(HEALTH_TIMEZONE).strftime("%Y-%m-%d")
+        item["_fingerprint"] = sample.fingerprint
         by_day.setdefault(day, []).append(item)
         accepted += 1
 
     for day, items in by_day.items():
         day_path = os.path.join(RAW_DIR, f"{day}.json")
-        existing = []
-        if os.path.exists(day_path):
-            try:
-                with open(day_path, "r", encoding="utf-8") as f:
-                    existing = json.load(f)
-            except Exception:
-                existing = []
-        seen = {x.get("_fingerprint") for x in existing if isinstance(x, dict)}
-        merged = list(existing)
-        added = 0
-        for item in items:
-            if item["_fingerprint"] in seen:
-                continue
-            seen.add(item["_fingerprint"])
-            merged.append(item)
-            added += 1
-        with open(day_path, "w", encoding="utf-8") as f:
-            json.dump(merged, f, ensure_ascii=False, indent=1)
-        accepted -= (len(items) - added)
-        skipped += (len(items) - added)
+        added = _merge_daily_samples(day_path, items)
+        accepted -= len(items) - added
+        skipped += len(items) - added
 
     # 轻量触发看板刷新（后台，不阻塞响应）
     try:
@@ -146,14 +337,19 @@ def _refresh_dashboard():
 
 @app.get("/")
 def root():
-    return {"status": "ok", "service": "Health API for Hermes", "version": "2.0"}
+    return {
+        "status": "ok",
+        "service": "Health API for Hermes",
+        "version": "2.0",
+        "timezone": str(HEALTH_TIMEZONE),
+    }
 
 
 @app.post("/api/health")
 async def receive_health(data: dict, _=Depends(verify_token)):
     """接收快捷指令推送的健康数据，写入 Obsidian"""
-    date = data.get("date", datetime.now().strftime("%Y-%m-%d"))
-    now = datetime.now().strftime("%H:%M")
+    date = _safe_markdown_date(data.get("date"))
+    now = datetime.now(HEALTH_TIMEZONE).strftime("%H:%M")
 
     os.makedirs(HEALTH_DIR, exist_ok=True)
     os.makedirs(SLEEP_DIR, exist_ok=True)

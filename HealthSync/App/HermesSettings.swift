@@ -20,11 +20,16 @@ public enum SyncMode: String, CaseIterable, Codable, Sendable, Identifiable {
 }
 
 /// 设置模型：服务器/Token/数据范围/主题/开关。
+@MainActor
 @Observable
 public final class HermesSettings {
-    // 服务器（Token 存 Keychain，其余存 UserDefaults）
+    /// App 与同步协调器共用同一个设置实例。
+    public static let shared = HermesSettings()
+
+    // 服务器连接信息存 Keychain，其余配置存 UserDefaults。
     public var serverHost: String = ""
     public var serverPort: String = "443"
+    public var serverScheme: String = "https"
     public var apiToken: String = "" {
         didSet { saveToken() }
     }
@@ -33,8 +38,9 @@ public final class HermesSettings {
     public var syncMode: SyncMode = .incremental
     public var lookback: LookbackRange = .last7Days
     public var enabledTypes: Set<HealthDataType> = HealthDataType.defaultEnabled
+    public var requestedHealthTypes: Set<HealthDataType> = []
     public var autoSyncOnActive: Bool = true
-    public var backgroundRetry: Bool = true
+    public var retryFailedUploads: Bool = true
 
     // 主题
     public var colorScheme: AppColorScheme = .system
@@ -53,26 +59,45 @@ public final class HermesSettings {
     }
 
     private func load() {
+        var loadedHost = ""
+        var loadedPort = "443"
+        var loadedScheme: String?
+
         if let host = keychain.read(.serverHost), !host.isEmpty {
-            serverHost = host
+            loadedHost = host
         } else if let stored = defaults.string(forKey: "serverHost"), !stored.isEmpty {
-            serverHost = stored
+            loadedHost = stored
         }
         if let port = keychain.read(.serverPort), !port.isEmpty {
-            serverPort = port
+            loadedPort = port
         } else if let stored = defaults.string(forKey: "serverPort"), !stored.isEmpty {
-            serverPort = stored
+            loadedPort = stored
         }
-        // 端口迁移：旧版存的是服务器直连端口 8765；隧道模式统一走 443。
-        if serverPort == "8765" {
-            serverPort = "443"
-            defaults.set(serverPort, forKey: "serverPort")
-            try? keychain.save(serverPort, for: .serverPort)
+        if let scheme = keychain.read(.serverScheme), !scheme.isEmpty {
+            loadedScheme = scheme
+        } else if let stored = defaults.string(forKey: "serverScheme"), !stored.isEmpty {
+            loadedScheme = stored
         }
+
+        let defaultScheme = loadedScheme ?? (loadedPort == "443" ? "https" : "http")
+        if !loadedHost.isEmpty,
+           let address = ServerAddress(host: loadedHost,
+                                       port: loadedPort,
+                                       defaultScheme: defaultScheme) {
+            serverHost = address.host
+            serverPort = String(address.port)
+            serverScheme = address.scheme
+        } else {
+            serverHost = loadedHost
+            serverPort = loadedPort
+            serverScheme = defaultScheme
+        }
+
         if let token = keychain.read(.apiToken) {
             apiToken = token
         } else if let stored = defaults.string(forKey: "apiToken"), !stored.isEmpty {
             apiToken = stored
+            defaults.removeObject(forKey: "apiToken")
         }
 
         if let raw = defaults.string(forKey: "syncMode"),
@@ -87,8 +112,14 @@ public final class HermesSettings {
            let set = try? JSONDecoder().decode(Set<HealthDataType>.self, from: data) {
             enabledTypes = set
         }
+        if let data = defaults.data(forKey: "requestedHealthTypes"),
+           let set = try? JSONDecoder().decode(Set<HealthDataType>.self, from: data) {
+            requestedHealthTypes = set
+        }
         autoSyncOnActive = defaults.object(forKey: "autoSyncOnActive") as? Bool ?? true
-        backgroundRetry = defaults.object(forKey: "backgroundRetry") as? Bool ?? true
+        retryFailedUploads = defaults.object(forKey: "retryFailedUploads") as? Bool
+            ?? defaults.object(forKey: "backgroundRetry") as? Bool
+            ?? true
         if let raw = defaults.string(forKey: "colorScheme"),
            let cs = AppColorScheme(rawValue: raw) {
             colorScheme = cs
@@ -109,19 +140,36 @@ public final class HermesSettings {
     }
 
     public func persist() {
+        let trimmedToken = normalizedAPIToken
+        if apiToken != trimmedToken {
+            apiToken = trimmedToken
+        }
+        if let address = ServerAddress(host: serverHost,
+                                       port: serverPort,
+                                       defaultScheme: serverScheme) {
+            serverHost = address.host
+            serverPort = String(address.port)
+            serverScheme = address.scheme
+        }
         defaults.set(serverHost, forKey: "serverHost")
         defaults.set(serverPort, forKey: "serverPort")
+        defaults.set(serverScheme, forKey: "serverScheme")
         defaults.set(syncMode.rawValue, forKey: "syncMode")
         defaults.set(lookback.rawValue, forKey: "lookback")
         if let data = try? JSONEncoder().encode(enabledTypes) {
             defaults.set(data, forKey: "enabledTypes")
         }
+        if let data = try? JSONEncoder().encode(requestedHealthTypes) {
+            defaults.set(data, forKey: "requestedHealthTypes")
+        }
         defaults.set(autoSyncOnActive, forKey: "autoSyncOnActive")
-        defaults.set(backgroundRetry, forKey: "backgroundRetry")
+        defaults.set(retryFailedUploads, forKey: "retryFailedUploads")
+        defaults.removeObject(forKey: "backgroundRetry")
         defaults.set(colorScheme.rawValue, forKey: "colorScheme")
         saveToken()
         try? keychain.save(serverHost, for: .serverHost)
         try? keychain.save(serverPort, for: .serverPort)
+        try? keychain.save(serverScheme, for: .serverScheme)
     }
 
     private func saveToken() {
@@ -160,6 +208,31 @@ public final class HermesSettings {
     /// 当前启用的只读授权类型（过滤掉无法映射为 HKObjectType 的类型）。
     public func readTypes() -> Set<HKObjectType> {
         Set(enabledTypes.compactMap { $0.objectType })
+    }
+
+    /// HealthKit 授权请求成功返回后，记录本次已经请求过的类型。
+    public func markHealthTypesRequested(_ types: Set<HealthDataType>) {
+        requestedHealthTypes.formUnion(types)
+        if let data = try? JSONEncoder().encode(requestedHealthTypes) {
+            defaults.set(data, forKey: "requestedHealthTypes")
+        }
+    }
+
+    /// 当前服务器配置解析后的连接信息。
+    public var serverAddress: ServerAddress? {
+        ServerAddress(host: serverHost,
+                      port: serverPort,
+                      defaultScheme: serverScheme)
+    }
+
+    /// 当前实际使用的 ingest 地址。
+    public var ingestURL: URL? {
+        serverAddress?.url(path: "/api/ingest")
+    }
+
+    /// 用户粘贴 Token 时即使带入首尾空白，鉴权也应保持一致。
+    public var normalizedAPIToken: String {
+        apiToken.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 }
 

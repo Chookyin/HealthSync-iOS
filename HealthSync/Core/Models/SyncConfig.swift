@@ -12,8 +12,8 @@ public struct SyncConfig: Codable, Sendable, Equatable {
     public var maxRetryCount: Int
     /// 指数退避基数（秒）。
     public var retryBackoffBase: TimeInterval
-    /// 并发查询的类型数上限。
-    public var maxConcurrentQueries: Int
+    /// 增量同步时向过去重叠查询的时间（秒），用于捕获延迟写入的历史数据。
+    public var incrementalOverlap: TimeInterval
 
     public static let `default` = SyncConfig(
         batchSize: 2000,
@@ -21,7 +21,7 @@ public struct SyncConfig: Codable, Sendable, Equatable {
         requestTimeout: 30,
         maxRetryCount: 3,
         retryBackoffBase: 2.0,
-        maxConcurrentQueries: 4
+        incrementalOverlap: 7 * 24 * 60 * 60
     )
 
     public init(batchSize: Int = 2000,
@@ -29,12 +29,29 @@ public struct SyncConfig: Codable, Sendable, Equatable {
                 requestTimeout: TimeInterval = 30,
                 maxRetryCount: Int = 3,
                 retryBackoffBase: TimeInterval = 2.0,
-                maxConcurrentQueries: Int = 4) {
+                incrementalOverlap: TimeInterval = 7 * 24 * 60 * 60) {
         self.batchSize = batchSize
         self.uploadBatchSize = uploadBatchSize
         self.requestTimeout = requestTimeout
         self.maxRetryCount = maxRetryCount
         self.retryBackoffBase = retryBackoffBase
-        self.maxConcurrentQueries = maxConcurrentQueries
+        self.incrementalOverlap = incrementalOverlap
+    }
+}
+
+/// 同步查询窗口策略，独立于 HealthKit，便于验证全量与增量边界。
+public enum SyncWindowPolicy {
+    public static func startDate(requestsAllHistory: Bool,
+                                 lastSyncedAt: Date?,
+                                 lookback: LookbackRange,
+                                 overlap: TimeInterval,
+                                 now: Date = Date()) -> Date {
+        if requestsAllHistory {
+            return .distantPast
+        }
+        if let lastSyncedAt {
+            return lastSyncedAt.addingTimeInterval(-max(0, overlap))
+        }
+        return lookback.startDate(now: now)
     }
 }

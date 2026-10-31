@@ -11,7 +11,8 @@ public enum SyncResult: Equatable {
 
 /// 打开即同步的调度中枢（scenePhase 驱动）。
 /// 串行化、防重入：同一时刻只允许一个同步任务执行。
-public final class SyncCoordinator: @unchecked Sendable {
+@MainActor
+public final class SyncCoordinator {
     public static let shared = SyncCoordinator()
 
     private let healthService: HealthKitService
@@ -35,7 +36,7 @@ public final class SyncCoordinator: @unchecked Sendable {
     public init(healthService: HealthKitService = HealthKitService(),
                 networkService: HTTPSyncService = HTTPSyncService(),
                 cursorStore: SyncCursorStore = SyncCursorStore(),
-                settings: HermesSettings = HermesSettings(),
+                settings: HermesSettings = .shared,
                 state: AppState = AppState.shared,
                 config: SyncConfig = .default) {
         self.healthService = healthService
@@ -44,6 +45,8 @@ public final class SyncCoordinator: @unchecked Sendable {
         self.settings = settings
         self.state = state
         self.config = config
+        let savedCursor = cursorStore.load()
+        self.state.lastSyncAt = savedCursor.lastSuccessfulAt ?? savedCursor.lastSyncedAt
     }
 
     // MARK: - 对外入口
@@ -54,13 +57,10 @@ public final class SyncCoordinator: @unchecked Sendable {
         startSync(fullSync: false)
     }
 
-    /// 手动同步。返回是否成功。
+    /// 手动同步。返回值表示任务是否成功启动。
     @discardableResult
     public func syncNow() -> Bool {
         startSync(fullSync: false)
-        // 结果通过 state.syncPhase 反映，这里同步返回会立即 false；
-        // SettingsView 在 Task 里 await 后用 state 判断。改为返回任务。
-        return true
     }
 
     /// 手动同步（可等待结果）。
@@ -124,30 +124,15 @@ public final class SyncCoordinator: @unchecked Sendable {
     public func autoEnableTypesWithData() async {
     }
 
-    /// 读取 HealthKit 真实授权状态并刷新 UI。
-    /// 启动 / 设置页出现时调用，避免已授权仍显示"请求健康数据权限"。
-    /// 只要 `statusMap` 中任一类型为已授权即视为已授权（不依赖 enabledTypes，
-    /// 避免用户勾选集与授权集不重合时误判为未授权）。
+    /// 刷新可公开的授权请求状态。
+    /// iOS 不会告诉 App 用户是否真的授予了只读权限，因此这里不把“查询有结果”
+    /// 或 `authorizationStatus(for:)` 当作读取授权已授予的证明。
     public func refreshHealthAuthStatus() async {
-        // 先按系统 API 判断（写入类型会返回明确状态）。
-        let statusMap = await healthService.authStatus(for: HealthDataType.allCases)
-        if statusMap.values.contains(where: { $0 == .authorized }) {
-            state.isHealthAuthorized = true
-            return
-        }
-        // 关键：iOS 出于隐私，对「只读」类型的 authorizationStatus 永远返回
-        // .sharingDenied / .notDetermined，不会透露用户是否真的授权读取。
-        // 因此改用「实际读一次」探测：能顺利执行查询即视为已授权（数据可以为空）。
-        let probe: Set<HealthDataType> = [.stepCount]
-        do {
-            let end = Date()
-            let start = Calendar.current.date(byAdding: .day, value: -1, to: end) ?? end
-            _ = try await healthService.fetchAll(types: probe, startDate: start, endDate: end)
-            // 查询未抛错 —— 授权是通的
-            state.isHealthAuthorized = true
-        } catch {
-            state.isHealthAuthorized = false
-        }
+        let requestedEnabled = settings.requestedHealthTypes
+            .intersection(settings.enabledTypes)
+        state.healthAuthorizationState = requestedEnabled.isEmpty
+            ? .notRequested
+            : .requested
     }
 
     /// 读取用户生物学性别（特征类型，本地读取，不弹窗）。
@@ -158,32 +143,25 @@ public final class SyncCoordinator: @unchecked Sendable {
     /// 强制全量同步（重置游标）。
     public func forceFullSync() {
         cursorStore.reset()
+        state.lastSyncAt = nil
         startSync(fullSync: true)
     }
 
-    /// 请求健康权限（设置页用）。已授权则直接标记。
-    /// 点击按钮时先检查真实状态：已授权直接置 true，不再重复弹系统授权框。
+    /// 请求尚未请求过的新启用类型。HealthKit 请求成功不等于权限一定被授予。
     public func requestAuthIfNeeded() async {
-        let statusMap = await healthService.authStatus(for: HealthDataType.allCases)
-        if statusMap.values.contains(where: { $0 == .authorized }) {
-            state.isHealthAuthorized = true
-            return
-        }
-        let ok = await ensureAuthorization()
-        if ok {
-            state.isHealthAuthorized = true
-        } else {
-            // 失败也以真实状态为准。
-            await refreshHealthAuthStatus()
-        }
+        _ = await ensureHealthAuthorizationRequested()
     }
 
     /// 取消当前同步。
     public func cancel() {
-        activeTask?.cancel()
+        lock.lock()
+        taskToken &+= 1
+        let task = activeTask
         activeTask = nil
         isSyncing = false
         isManualTask = false
+        lock.unlock()
+        task?.cancel()
         state.syncPhase = .idle
     }
 
@@ -194,11 +172,12 @@ public final class SyncCoordinator: @unchecked Sendable {
 
     // MARK: - 内部
 
-    private func startSync(fullSync: Bool) {
+    @discardableResult
+    private func startSync(fullSync: Bool) -> Bool {
         lock.lock()
         if isSyncing {
             lock.unlock()
-            return
+            return false
         }
         isSyncing = true
         isManualTask = false
@@ -215,18 +194,19 @@ public final class SyncCoordinator: @unchecked Sendable {
             guard let self else { return }
             await self.performSync(fullSync: fullSync, isManual: false, token: token)
         }
+        return true
     }
 
     private func performSync(fullSync: Bool, isManual: Bool, token: UInt64) async {
-        // 1. 权限检查：先读取真实授权状态，未确定时再发起系统授权请求。
-        await refreshHealthAuthStatus()
-        guard await ensureAuthorization() else {
-            finishSync(.failed("健康数据权限未授权，请在设置页授予读取权限"), token: token)
+        // 1. 确保用户已经处理过当前启用类型的系统授权请求。
+        guard await ensureHealthAuthorizationRequested() else {
+            finishSync(.failed("健康数据权限请求失败，请在系统设置中检查 HealthSync"), token: token)
             return
         }
 
         // 2. 配置校验
-        guard !settings.serverHost.isEmpty, !settings.apiToken.isEmpty else {
+        guard let serverAddress = settings.serverAddress,
+              !settings.normalizedAPIToken.isEmpty else {
             finishSync(.failed("请先在设置页配置服务器地址与 Token"), token: token)
             return
         }
@@ -243,17 +223,14 @@ public final class SyncCoordinator: @unchecked Sendable {
         var cursor = cursorStore.load()
         let now = Date()
 
-        let startDate: Date
-        switch settings.syncMode {
-        case .alwaysFull:
-            startDate = settings.lookback.startDate(now: now)
-        case .fullThenIncremental, .incremental:
-            if fullSync || cursor.lastSyncedAt == nil {
-                startDate = settings.lookback.startDate(now: now)
-            } else {
-                startDate = cursor.lastSyncedAt!
-            }
-        }
+        let requestsAllHistory = fullSync || settings.syncMode == .alwaysFull
+        let startDate = SyncWindowPolicy.startDate(
+            requestsAllHistory: requestsAllHistory,
+            lastSyncedAt: cursor.lastSyncedAt,
+            lookback: settings.lookback,
+            overlap: config.incrementalOverlap,
+            now: now
+        )
 
         // 4. 查询（后台 Task 不阻塞 UI）
         state.syncPhase = .syncing
@@ -262,58 +239,60 @@ public final class SyncCoordinator: @unchecked Sendable {
 
         do {
             Logger.info("开始同步：\(enabled.count) 类型，起点 \(startDate)")
-            let dtos = try await healthService.fetchAll(
+            let safeQueryPageSize = max(1, config.batchSize)
+            let safeUploadBatchSize = max(1, config.uploadBatchSize)
+            let pageSize = min(safeQueryPageSize, safeUploadBatchSize)
+            let buffer = SyncBatchBuffer(batchSize: safeUploadBatchSize)
+            let osVersion = UIDevice.current.systemVersion
+            let device = SyncPayload.Device(model: deviceModel(),
+                                            os: osVersion,
+                                            app: "HealthSync/1.0")
+            let uploadRetries = settings.retryFailedUploads ? config.maxRetryCount : 0
+            let apiToken = settings.normalizedAPIToken
+
+            let totalSamples = try await healthService.fetchPages(
                 types: enabled,
                 startDate: startDate,
-                endDate: now
-            ) { [weak self] fraction in
+                endDate: now,
+                pageSize: pageSize
+            ) { [weak self] type, fraction in
                 Task { @MainActor [weak self] in
                     guard let self else { return }
-                    self.state.progress = fraction * 0.8
+                    guard self.state.syncPhase == .syncing else { return }
+                    self.state.currentType = type.displayName
+                    self.state.progress = fraction * 0.9
                 }
-            }
-            Logger.info("HealthKit 查询完成：\(dtos.count) 条")
+            } handler: { [weak self] page in
+                guard let self else { throw CancellationError() }
+                self.syncStage = "上传"
+                self.state.totalSamples += page.count
 
-            // 5. 分片上传
-            syncStage = "上传"
-            let buffer = SyncBatchBuffer(batchSize: config.uploadBatchSize)
-            let batches = buffer.split(dtos)
-            state.totalSamples = dtos.count
-
-            guard !batches.isEmpty else {
-                // 无新数据也标记成功（更新游标）
-                cursor.lastSyncedAt = now
-                cursorStore.save(cursor)
-                finishSync(.success, token: token)
-                return
-            }
-
-            let device = SyncPayload.Device(model: deviceModel(), os: UIDevice.current.systemVersion, app: "HealthSync/1.0")
-            var uploaded = 0
-
-            for batch in batches {
-                if Task.isCancelled {
-                    finishSync(.failed("同步已取消"), token: token)
-                    return
+                for batch in buffer.split(page) {
+                    try Task.checkCancellation()
+                    let payload = SyncPayload(
+                        device: device,
+                        batch: batch,
+                        range: SyncPayload.Range(start: startDate, end: now),
+                        cursorFingerprint: cursor.dedupFingerprint,
+                        fullSync: requestsAllHistory
+                    )
+                    try await self.networkService.upload(
+                        payload: payload,
+                        address: serverAddress,
+                        token: apiToken,
+                        retries: uploadRetries
+                    )
+                    self.state.uploadedBatches += 1
                 }
-                let payload = SyncPayload(
-                    device: device,
-                    batch: batch,
-                    range: SyncPayload.Range(start: startDate, end: now),
-                    cursorFingerprint: cursor.dedupFingerprint,
-                    fullSync: (settings.syncMode == .alwaysFull || fullSync)
-                )
-                try await networkService.upload(payload: payload,
-                                                host: settings.serverHost,
-                                                port: settings.serverPort,
-                                                token: settings.apiToken)
-                uploaded += 1
-                state.uploadedBatches = uploaded
-                state.progress = 0.8 + 0.2 * (Double(uploaded) / Double(batches.count))
+                self.syncStage = "查询"
             }
+            state.totalSamples = totalSamples
+            state.progress = 1
+            Logger.info("HealthKit 查询与上传完成：\(totalSamples) 条")
 
-            // 6. 更新游标
+            // 5. 更新游标
             cursor.lastSyncedAt = now
+            cursor.lastSuccessfulAt = now
             cursor.dedupFingerprint = "\(now.timeIntervalSince1970)"
             cursorStore.save(cursor)
 
@@ -329,48 +308,42 @@ public final class SyncCoordinator: @unchecked Sendable {
     }
 
     @MainActor
-    private func ensureAuthorization() async -> Bool {
-        // 先读取真实授权状态：已授权直接返回 true。
+    private func ensureHealthAuthorizationRequested() async -> Bool {
         await refreshHealthAuthStatus()
-        if state.isHealthAuthorized {
+        let pending = settings.enabledTypes
+            .subtracting(settings.requestedHealthTypes)
+        guard !pending.isEmpty else {
+            state.healthAuthorizationState = .requested
             return true
         }
 
-        // 未确定（首启）才发起系统授权请求；已拒绝则不再重复请求。
-        let readTypes = settings.readTypes()
-        guard !readTypes.isEmpty else { return false }
+        let readTypes = Set(pending.compactMap { $0.objectType })
+        guard !readTypes.isEmpty else {
+            state.healthAuthorizationState = .unavailable
+            return false
+        }
         do {
-            try await healthService.requestReadAuthorization(for: settings.enabledTypes)
-            // 请求后以真实状态为准刷新。
-            await refreshHealthAuthStatus()
-            return state.isHealthAuthorized
+            try await healthService.requestReadAuthorization(for: pending)
+            settings.markHealthTypesRequested(pending)
+            state.healthAuthorizationState = .requested
+            return true
         } catch {
-            state.isHealthAuthorized = false
+            state.healthAuthorizationState = .unavailable
             return false
         }
     }
 
     private func finishSync(_ phase: SyncPhase, token: UInt64? = nil) {
-        // 若传入令牌且与当前活动任务不符（旧任务被取消后的收尾），则不触碰新任务的锁。
-        if let token {
-            if taskToken != token {
-                // 旧任务收尾：仅更新 UI 状态，不清新任务的 isSyncing。
-                switch phase {
-                case .success:
-                    state.syncPhase = .success
-                    state.lastSyncAt = Date()
-                case .failed(let msg):
-                    state.syncPhase = .failed(msg)
-                    state.lastError = msg
-                default:
-                    state.syncPhase = phase
-                }
-                return
-            }
+        lock.lock()
+        if let token, taskToken != token {
+            // 已取消的旧任务不得覆盖新任务的任何状态。
+            lock.unlock()
+            return
         }
         isSyncing = false
         isManualTask = false
         syncStage = "idle"
+        lock.unlock()
         switch phase {
         case .success:
             state.syncPhase = .success

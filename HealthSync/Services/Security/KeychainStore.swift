@@ -7,7 +7,7 @@ public final class KeychainStore: @unchecked Sendable {
         case apiToken = "hermes_api_token"
         case serverHost = "hermes_server_host"
         case serverPort = "hermes_server_port"
-        case trustFingerprint = "hermes_trust_fingerprint"
+        case serverScheme = "hermes_server_scheme"
     }
 
     private let service: String

@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		A10000000000000000000001 /* HealthSyncTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000002 /* HealthSyncTests.swift */; };
 		2E133C671DB84B009214CFE2 /* Features/Settings/SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B77B3E684B4470BB5CB4842 /* Features/Settings/SettingsView.swift */; };
 		324E4B95C2D741939BEB92CE /* Services/HealthKit/HealthStoreProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACCC86A4FA3C45F7A227BE35 /* Services/HealthKit/HealthStoreProtocol.swift */; };
 		353A9BF64BF74D5F886A1DA9 /* Core/Models/SyncConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = E865FAC14D97405CB0DCE206 /* Core/Models/SyncConfig.swift */; };
@@ -26,13 +27,24 @@
 		CC6C414BD36543E0BB946D70 /* Services/HealthKit/HealthKitService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A90D5B642D4F4B31A7807142 /* Services/HealthKit/HealthKitService.swift */; };
 		CFBB50D1EB944286B18A55F7 /* Features/Dashboard/HealthCard.swift in Sources */ = {isa = PBXBuildFile; fileRef = D2F8D6CE10D344628208036C /* Features/Dashboard/HealthCard.swift */; };
 		D2E1569D11F347E5BBDE5A37 /* Services/Security/KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 18D48249F3BE45D9B68517ED /* Services/Security/KeychainStore.swift */; };
-		DA42737C3E5A42C1A19A37EF /* Services/Security/CertificateService.swift in Sources */ = {isa = PBXBuildFile; fileRef = A08B19793367427C96B16C34 /* Services/Security/CertificateService.swift */; };
 		E0E5D8DA99094461A46B021A /* Core/Models/HealthDataType.swift in Sources */ = {isa = PBXBuildFile; fileRef = 810A28AB38CA4D219CD30D3C /* Core/Models/HealthDataType.swift */; };
 		E3AF4F3A542B45248E15CFA6 /* Core/Models/SyncCursor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0705F8E0BC7245CEB6CEBC74 /* Core/Models/SyncCursor.swift */; };
 		E6837DD3B9A14300AE6013C6 /* Features/Dashboard/DashboardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = BCEF864AA5C94ADDB7E6A8E1 /* Features/Dashboard/DashboardView.swift */; };
 /* End PBXBuildFile section */
 
+/* Begin PBXContainerItemProxy section */
+		A1000000000000000000000A /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 1E01F5B8B589466083190F65 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = AAA07165141D42AD95DCBD92;
+			remoteInfo = HealthSync;
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
+		A10000000000000000000002 /* HealthSyncTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthSyncTests.swift; sourceTree = "<group>"; };
+		A10000000000000000000005 /* HealthSyncTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = HealthSyncTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		0705F8E0BC7245CEB6CEBC74 /* Core/Models/SyncCursor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Core/Models/SyncCursor.swift; sourceTree = "<group>"; };
 		18D48249F3BE45D9B68517ED /* Services/Security/KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/Security/KeychainStore.swift; sourceTree = "<group>"; };
 		1AC18A7000FB4713B68ECAEA /* Core/Utilities/DateRange.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Core/Utilities/DateRange.swift; sourceTree = "<group>"; };
@@ -47,7 +59,6 @@
 		6E181AD926344512997262D0 /* Core/DTO/SyncPayload.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Core/DTO/SyncPayload.swift; sourceTree = "<group>"; };
 		72361E0855894FD8A6C67C32 /* Services/Network/HTTPSyncService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/Network/HTTPSyncService.swift; sourceTree = "<group>"; };
 		810A28AB38CA4D219CD30D3C /* Core/Models/HealthDataType.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Core/Models/HealthDataType.swift; sourceTree = "<group>"; };
-		A08B19793367427C96B16C34 /* Services/Security/CertificateService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/Security/CertificateService.swift; sourceTree = "<group>"; };
 		A90D5B642D4F4B31A7807142 /* Services/HealthKit/HealthKitService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/HealthKit/HealthKitService.swift; sourceTree = "<group>"; };
 		ACCC86A4FA3C45F7A227BE35 /* Services/HealthKit/HealthStoreProtocol.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/HealthKit/HealthStoreProtocol.swift; sourceTree = "<group>"; };
 		BCEF864AA5C94ADDB7E6A8E1 /* Features/Dashboard/DashboardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Features/Dashboard/DashboardView.swift; sourceTree = "<group>"; };
@@ -60,6 +71,13 @@
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		A10000000000000000000007 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		88AC1CC809474A11B2390291 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -74,6 +92,7 @@
 			isa = PBXGroup;
 			children = (
 				839539A1AA204551A4BE0633 /* HealthSync */,
+				A10000000000000000000003 /* HealthSyncTests */,
 				DFDF2EBC37C54A14A2CB64C0 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -100,7 +119,6 @@
 				ACCC86A4FA3C45F7A227BE35 /* Services/HealthKit/HealthStoreProtocol.swift */,
 				72361E0855894FD8A6C67C32 /* Services/Network/HTTPSyncService.swift */,
 				3805D055A62441F08AFF236D /* Services/Network/SyncBatchBuffer.swift */,
-				A08B19793367427C96B16C34 /* Services/Security/CertificateService.swift */,
 				18D48249F3BE45D9B68517ED /* Services/Security/KeychainStore.swift */,
 				3B77B3E684B4470BB5CB4842 /* Features/Settings/SettingsView.swift */,
 				E4B3F6E22ACB454FACC08E19 /* Resources/Assets.xcassets */,
@@ -112,13 +130,40 @@
 			isa = PBXGroup;
 			children = (
 				43BDF2A5B2FA40629D3720F8 /* HealthSync.app */,
+				A10000000000000000000005 /* HealthSyncTests.xctest */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		A10000000000000000000003 /* HealthSyncTests */ = {
+			isa = PBXGroup;
+			children = (
+				A10000000000000000000002 /* HealthSyncTests.swift */,
+			);
+			path = HealthSyncTests;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		A10000000000000000000004 /* HealthSyncTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = A1000000000000000000000B /* Build configuration list for PBXNativeTarget "HealthSyncTests" */;
+			buildPhases = (
+				A10000000000000000000006 /* Sources */,
+				A10000000000000000000007 /* Frameworks */,
+				A10000000000000000000008 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				A10000000000000000000009 /* PBXTargetDependency */,
+			);
+			name = HealthSyncTests;
+			productName = HealthSyncTests;
+			productReference = A10000000000000000000005 /* HealthSyncTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 		AAA07165141D42AD95DCBD92 /* HealthSync */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 8A21312BE5214E03B36E6FC4 /* Build configuration list for PBXNativeTarget "HealthSync" */;
@@ -138,6 +183,14 @@
 		};
 /* End PBXNativeTarget section */
 
+/* Begin PBXTargetDependency section */
+		A10000000000000000000009 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = AAA07165141D42AD95DCBD92 /* HealthSync */;
+			targetProxy = A1000000000000000000000A /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
 /* Begin PBXProject section */
 		1E01F5B8B589466083190F65 /* Project object */ = {
 			isa = PBXProject;
@@ -146,6 +199,10 @@
 				LastSwiftUpdateCheck = 2700;
 				LastUpgradeCheck = 2700;
 				TargetAttributes = {
+					A10000000000000000000004 = {
+						CreatedOnToolsVersion = 27.0;
+						TestTargetID = AAA07165141D42AD95DCBD92;
+					};
 					AAA07165141D42AD95DCBD92 = {
 						CreatedOnToolsVersion = 27.0;
 					};
@@ -165,11 +222,19 @@
 			projectRoot = "";
 			targets = (
 				AAA07165141D42AD95DCBD92 /* HealthSync */,
+				A10000000000000000000004 /* HealthSyncTests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
+		A10000000000000000000008 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		6BA0B13B868C468F81883179 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -181,6 +246,14 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
+		A10000000000000000000006 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				A10000000000000000000001 /* HealthSyncTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		88676C96B2A348F4A9FCF13D /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
@@ -205,7 +278,6 @@
 				324E4B95C2D741939BEB92CE /* Services/HealthKit/HealthStoreProtocol.swift in Sources */,
 				432DD272FFCA43BDA3EBF872 /* Services/Network/HTTPSyncService.swift in Sources */,
 				654FACE924E240EEA058A392 /* Services/Network/SyncBatchBuffer.swift in Sources */,
-				DA42737C3E5A42C1A19A37EF /* Services/Security/CertificateService.swift in Sources */,
 				D2E1569D11F347E5BBDE5A37 /* Services/Security/KeychainStore.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -213,6 +285,54 @@
 /* End PBXSourcesBuildPhase section */
 
 /* Begin XCBuildConfiguration section */
+		A1000000000000000000000C /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.example.HealthSyncTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/HealthSync.app/HealthSync";
+			};
+			name = Debug;
+		};
+		A1000000000000000000000D /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = "";
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.example.HealthSyncTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/HealthSync.app/HealthSync";
+			};
+			name = Release;
+		};
 		0E7ABB38577D45A2A74FF22B /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -232,7 +352,8 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.example.HealthSync;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_VERSION = 5.0;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Release;
@@ -256,7 +377,8 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.example.HealthSync;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_VERSION = 5.0;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
 			name = Debug;
@@ -375,6 +497,15 @@
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
+		A1000000000000000000000B /* Build configuration list for PBXNativeTarget "HealthSyncTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				A1000000000000000000000C /* Debug */,
+				A1000000000000000000000D /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 		3B6D68DFA2934AB4870B60B9 /* Build configuration list for PBXProject "HealthSync" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (

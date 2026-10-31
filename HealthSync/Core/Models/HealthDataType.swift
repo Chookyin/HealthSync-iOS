@@ -28,7 +28,7 @@ public enum HealthCategory: String, CaseIterable, Codable, Sendable, Identifiabl
     }
 }
 
-/// 全量健康数据类型清单（42 种），承载到 `HKObjectType` 的映射。
+/// 全量健康数据类型清单，承载到 `HKObjectType` 的映射。
 /// 默认仅启用各分类下的核心可读类型，敏感类型（血氧、女性健康等）由设置页手动开启。
 public enum HealthDataType: String, CaseIterable, Codable, Sendable, Identifiable {
     // MARK: - 活动与运动
@@ -229,7 +229,7 @@ public enum HealthDataType: String, CaseIterable, Codable, Sendable, Identifiabl
         case .workouts: return HKObjectType.workoutType()
         case .sixMinuteWalkTestDistance: return HKObjectType.quantityType(forIdentifier: .sixMinuteWalkTestDistance)
         case .appleWalkingSteadiness: return HKObjectType.quantityType(forIdentifier: .appleWalkingSteadiness)
-        case .audioExposureEvent: return HKObjectType.categoryType(forIdentifier: .audioExposureEvent)
+        case .audioExposureEvent: return HKObjectType.categoryType(forIdentifier: .environmentalAudioExposureEvent)
         case .estimatedWorkoutEffortScore: return HKObjectType.quantityType(forIdentifier: .estimatedWorkoutEffortScore)
         case .workoutEffortScore: return HKObjectType.quantityType(forIdentifier: .workoutEffortScore)
         case .mindfulSession: return HKObjectType.categoryType(forIdentifier: .mindfulSession)
@@ -326,20 +326,20 @@ public enum HealthDataType: String, CaseIterable, Codable, Sendable, Identifiabl
         }
     }
 
-    /// 该类型是否可作为「只读授权」的标准类型提交给 `requestAuthorization`。
-    /// `workouts` / `electrocardiogram` 分别对应 `HKWorkoutType` / `HKElectrocardiogramType`，
-    /// 这类特殊类型在 iOS 27 上混入 read 集合可能导致 `requestAuthorization` 抛错，
-    /// 从而拖垮整个授权请求，故在此排除，只把可授权的标准类型交给系统。
-    public var isRequestableReadType: Bool {
+    /// 用户在设置页选择的睡眠阶段；全阶段类型返回 nil。
+    public var sleepStageValue: Int? {
         switch self {
-        case .workouts, .electrocardiogram:
-            return false
-        default:
-            return true
+        case .sleepInBed: return HKCategoryValueSleepAnalysis.inBed.rawValue
+        case .sleepAsleep: return HKCategoryValueSleepAnalysis.asleepUnspecified.rawValue
+        case .sleepAwake: return HKCategoryValueSleepAnalysis.awake.rawValue
+        case .sleepREM: return HKCategoryValueSleepAnalysis.asleepREM.rawValue
+        case .sleepCore: return HKCategoryValueSleepAnalysis.asleepCore.rawValue
+        case .sleepDeep: return HKCategoryValueSleepAnalysis.asleepDeep.rawValue
+        default: return nil
         }
     }
 
-    /// 默认启用的核心类型（全量能力 42 种，默认勾选其中主流的 28 种，敏感类型默认关闭）。
+    /// 默认排除敏感类型和单独的睡眠子阶段，用户可在设置页手动启用。
     public static let defaultEnabled: Set<HealthDataType> = {
         let excluded: Set<HealthDataType> = [.oxygenSaturation, .appleSleepingWristTemperature,
                                              .bloodGlucose,

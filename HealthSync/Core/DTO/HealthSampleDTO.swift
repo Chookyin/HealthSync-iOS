@@ -2,6 +2,20 @@ import Foundation
 
 /// 统一健康样本 DTO（Codable，可序列化为 JSON 上传）。
 public struct HealthSampleDTO: Codable, Sendable, Identifiable, Equatable {
+    public struct ECGVoltage: Codable, Sendable, Equatable {
+        public var timeSinceSampleStart: TimeInterval
+        public var voltageMicrovolts: Double
+        public var lead: String
+
+        public init(timeSinceSampleStart: TimeInterval,
+                    voltageMicrovolts: Double,
+                    lead: String) {
+            self.timeSinceSampleStart = timeSinceSampleStart
+            self.voltageMicrovolts = voltageMicrovolts
+            self.lead = lead
+        }
+    }
+
     public var id: String
     public var type: String
     public var category: String
@@ -17,6 +31,8 @@ public struct HealthSampleDTO: Codable, Sendable, Identifiable, Equatable {
     public var deviceName: String?
     /// 锻炼/ECG 等特殊样本附加信息。
     public var metadata: [String: String]?
+    /// ECG 电压波形；其他样本为 nil。
+    public var ecgVoltageMeasurements: [ECGVoltage]?
     /// 去重指纹。
     public var fingerprint: String
 
@@ -32,6 +48,7 @@ public struct HealthSampleDTO: Codable, Sendable, Identifiable, Equatable {
                 sourceBundleID: String? = nil,
                 deviceName: String? = nil,
                 metadata: [String: String]? = nil,
+                ecgVoltageMeasurements: [ECGVoltage]? = nil,
                 fingerprint: String) {
         self.id = id
         self.type = type
@@ -45,6 +62,7 @@ public struct HealthSampleDTO: Codable, Sendable, Identifiable, Equatable {
         self.sourceBundleID = sourceBundleID
         self.deviceName = deviceName
         self.metadata = metadata
+        self.ecgVoltageMeasurements = ecgVoltageMeasurements
         self.fingerprint = fingerprint
     }
 }

@@ -1,14 +1,9 @@
 import Foundation
 import HealthKit
+import CryptoKit
 
 /// 将 HK 样本映射为统一 DTO（纯函数，便于测试）。
 public enum HealthSampleMapper {
-    private static let isoFormatter: ISO8601DateFormatter = {
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return f
-    }()
-
     /// 睡眠阶段名称映射。
     private static func sleepStageDescription(_ value: Int) -> String {
         switch HKCategoryValueSleepAnalysis(rawValue: value) {
@@ -22,16 +17,29 @@ public enum HealthSampleMapper {
         }
     }
 
-    /// 生成稳定去重指纹。
-    public static func fingerprint(type: String, start: Date, end: Date, source: String) -> String {
-        let raw = "\(type)|\(isoFormatter.string(from: start))|\(isoFormatter.string(from: end))|\(source)"
-        var hasher = Hasher()
-        hasher.combine(raw)
-        return String(format: "%08x", abs(hasher.finalize()))
+    /// 生成跨启动稳定的 SHA-256 去重指纹。
+    public static func fingerprint(id: UUID,
+                                   type: String,
+                                   start: Date,
+                                   end: Date,
+                                   source: String) -> String {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        let raw = [
+            id.uuidString.lowercased(),
+            type,
+            formatter.string(from: start),
+            formatter.string(from: end),
+            source.lowercased()
+        ].joined(separator: "|")
+        return SHA256.hash(data: Data(raw.utf8))
+            .map { String(format: "%02x", $0) }
+            .joined()
     }
 
     /// 将单个样本映射为 DTO。
-    public static func map(_ sample: HKSample) -> HealthSampleDTO {
+    public static func map(_ sample: HKSample,
+                           ecgVoltageMeasurements: [HealthSampleDTO.ECGVoltage]? = nil) -> HealthSampleDTO {
         let typeIdentifier: String
         let category: String
         let value: Double?
@@ -64,15 +72,42 @@ public enum HealthSampleMapper {
                 valueDescription = String(categorySample.value)
             }
 
+        case let electrocardiogram as HKElectrocardiogram:
+            typeIdentifier = HKObjectType.electrocardiogramType().identifier
+            value = Double(electrocardiogram.numberOfVoltageMeasurements)
+            unit = "count"
+            category = "heart"
+            valueDescription = electrocardiogram.classification.name
+            var ecgMetadata = [
+                "classification": electrocardiogram.classification.name,
+                "numberOfVoltageMeasurements": String(electrocardiogram.numberOfVoltageMeasurements),
+                "symptomsStatus": electrocardiogram.symptomsStatus.name
+            ]
+            if let heartRate = electrocardiogram.averageHeartRate,
+               heartRate.is(compatibleWith: .count().unitDivided(by: .minute())) {
+                ecgMetadata["averageHeartRate_bpm"] = String(
+                    heartRate.doubleValue(for: .count().unitDivided(by: .minute()))
+                )
+            }
+            if let frequency = electrocardiogram.samplingFrequency,
+               frequency.is(compatibleWith: .hertz()) {
+                ecgMetadata["samplingFrequency_hz"] = String(
+                    frequency.doubleValue(for: .hertz())
+                )
+            }
+            metadata = ecgMetadata
+
         case let workout as HKWorkout:
             typeIdentifier = "workout"
             value = workout.duration
             unit = "s"
             category = "activity"
             valueDescription = workout.workoutActivityType.name
+            let activeEnergyType = HKQuantityType.quantityType(forIdentifier: .activeEnergyBurned)
+            let activeEnergy = activeEnergyType.flatMap { workout.statistics(for: $0)?.sumQuantity() }
             metadata = [
                 "activityType": String(workout.workoutActivityType.rawValue),
-                "totalEnergyBurned_kcal": workout.totalEnergyBurned.map { String($0.doubleValue(for: .kilocalorie())) } ?? "",
+                "totalEnergyBurned_kcal": activeEnergy.map { String($0.doubleValue(for: .kilocalorie())) } ?? "",
             ]
 
         default:
@@ -88,7 +123,8 @@ public enum HealthSampleMapper {
         let start = sample.startDate
         let end = sample.endDate
 
-        let fp = fingerprint(type: typeIdentifier,
+        let fp = fingerprint(id: sample.uuid,
+                             type: typeIdentifier,
                              start: start,
                              end: end,
                              source: sourceBundle)
@@ -106,15 +142,24 @@ public enum HealthSampleMapper {
             sourceBundleID: sourceBundle,
             deviceName: deviceName,
             metadata: metadata,
+            ecgVoltageMeasurements: ecgVoltageMeasurements,
             fingerprint: fp
         )
     }
 
     /// 类型所属分类。
     private static func typeCategory(identifier: String) -> String {
-        if identifier == HKQuantityTypeIdentifier.stepCount.rawValue { return "activity" }
-        return "activity"
+        categoryByIdentifier[identifier] ?? "unknown"
     }
+
+    private static let categoryByIdentifier: [String: String] = {
+        var result: [String: String] = [:]
+        for type in HealthDataType.allCases {
+            guard let identifier = type.objectType?.identifier else { continue }
+            result[identifier] = type.category.dtoCategory
+        }
+        return result
+    }()
 
     /// 选择首选显示单位。
     private static func preferredUnit(for quantityType: HKQuantityType) -> HKUnit {
@@ -229,15 +274,28 @@ private extension HKElectrocardiogram.Classification {
     }
 }
 
-private extension HKCategoryValueMenstrualFlow {
-    var description: String {
+private extension HKElectrocardiogram.SymptomsStatus {
+    var name: String {
         switch self {
-        case .unspecified: return "unspecified"
-        case .light: return "light"
-        case .medium: return "medium"
-        case .heavy: return "heavy"
+        case .notSet: return "notSet"
         case .none: return "none"
+        case .present: return "present"
         @unknown default: return "unknown"
+        }
+    }
+}
+
+private extension HealthCategory {
+    var dtoCategory: String {
+        switch self {
+        case .activity: return "activity"
+        case .heart: return "heart"
+        case .sleep: return "sleep"
+        case .body: return "body"
+        case .respiratory: return "respiratory"
+        case .nutrition: return "nutrition"
+        case .metabolic: return "metabolic"
+        case .reproductiveHealth: return "reproductive"
         }
     }
 }

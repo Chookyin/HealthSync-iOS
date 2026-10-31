@@ -2,17 +2,24 @@
 
 FastAPI 服务，接收 iOS HealthSync App 推送的健康样本并落盘到本地 Obsidian vault（`data/raw/YYYY-MM-DD.json`）。
 
+运行时要求 Python 3.9+。
+
 ## 环境变量
 
 | 变量 | 必填 | 说明 |
 |---|---|---|
 | `HEALTH_API_TOKEN` | ✅ | 客户端 Bearer Token，无默认（未设置启动即退出） |
 | `OBSIDIAN_VAULT` | ✅ | Obsidian vault 根目录（将写入其下 data/raw） |
+| `HEALTH_TIMEZONE` | 可选 | 日期归档时区，默认 `UTC`；已有数据不应随意修改该值 |
+| `HEALTH_CORS_ORIGINS` | 可选 | 允许的网页来源，逗号分隔；默认不启用 CORS |
 | `DASHBOARD_SCRIPT` | 可选 | 每次 ingest 后额外执行的看板刷新脚本路径 |
 
 ## 启动
 
 ```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
 export HEALTH_API_TOKEN='...'
 export OBSIDIAN_VAULT='/path/to/vault'
 uvicorn health_api_server:app --host 0.0.0.0 --port 8765
@@ -23,11 +30,13 @@ uvicorn health_api_server:app --host 0.0.0.0 --port 8765
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | POST | `/api/ingest` | 接收批量样本（主要） |
-| POST | `/api/health/data` | 旧版查询接口（兼容） |
-| POST | `/api/health/report` | 报告接收（兼容） |
+| POST | `/api/health` | 旧版快捷指令摘要写入 |
+| GET | `/api/health/latest` | 获取最新摘要 |
 | GET | `/` | 健康检查 |
 
 所有接口除 `/` 外均校验 `Authorization: Bearer <TOKEN>`。
+
+`/api/ingest` 使用 Pydantic 校验 UUID、类型、时区感知日期、有限数值、fingerprint 和 ECG 波形。每日 JSON 使用文件锁与临时文件原子替换写入；损坏文件会先重命名为 `.corrupt-*` 备份，不会静默覆盖。
 
 ## 安全提示
 - **务必设置你的 `HEALTH_API_TOKEN`**，示例/默认值已被移除，未设置无法启动。

@@ -1,10 +1,12 @@
 import SwiftUI
 import HealthKit
+import UIKit
 
 /// 设置页：服务器连接 / 数据范围 / 同步控制 / 外观 / 关于
 struct SettingsView: View {
     @Environment(HermesSettings.self) private var settings
     @Environment(AppState.self) private var state
+    @Environment(\.openURL) private var openURL
     @State private var showSyncResult = false
     @State private var syncResultMessage = ""
     @State private var syncResultOK = false
@@ -16,38 +18,58 @@ struct SettingsView: View {
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "未知"
     }
 
-    /// 测试与服务器的连通性（GET / 应返回 200 + JSON status=ok）。
+    private var authorizationTitle: String {
+        switch state.healthAuthorizationState {
+        case .notRequested: return "请求健康数据权限"
+        case .requested: return "健康权限已请求"
+        case .unavailable: return "重新请求健康权限"
+        }
+    }
+
+    private var authorizationIcon: String {
+        switch state.healthAuthorizationState {
+        case .notRequested: return "lock.shield.fill"
+        case .requested: return "checkmark.shield.fill"
+        case .unavailable: return "exclamationmark.shield.fill"
+        }
+    }
+
+    private var authorizationBadge: String {
+        switch state.healthAuthorizationState {
+        case .notRequested: return "未请求"
+        case .requested: return "已请求"
+        case .unavailable: return "请求失败"
+        }
+    }
+
+    private var authorizationColor: Color {
+        switch state.healthAuthorizationState {
+        case .notRequested: return .secondary
+        case .requested: return .blue
+        case .unavailable: return .red
+        }
+    }
+
+    /// 通过需要鉴权的 ingest 接口验证地址、TLS 路径和 Token。
     private func testConnection() async {
         testing = true
         testResult = nil
         defer { testing = false }
-        let host = settings.serverHost.trimmingCharacters(in: .whitespaces)
-        let port = settings.serverPort.trimmingCharacters(in: .whitespaces)
-        guard !host.isEmpty, !port.isEmpty else {
-            testResult = "失败：地址或端口为空"
+        guard let address = settings.serverAddress else {
+            testResult = "失败：地址或端口格式错误"
             return
         }
-        let scheme = (port == "443") ? "https" : "http"
-        guard let url = URL(string: "\(scheme)://\(host):\(port)/") else {
-            testResult = "失败：地址格式错误（\(host)）"
+        let token = settings.normalizedAPIToken
+        guard !token.isEmpty else {
+            testResult = "失败：API Token 为空"
             return
         }
-        var request = URLRequest(url: url, timeoutInterval: 10)
-        request.setValue("Bearer \(settings.apiToken)", forHTTPHeaderField: "Authorization")
+
         do {
-            let (data, response) = try await URLSession.shared.data(for: request)
-            guard let http = response as? HTTPURLResponse else {
-                testResult = "失败：无 HTTP 响应"
-                return
-            }
-            let body = String(data: data, encoding: .utf8) ?? ""
-            if http.statusCode == 200 {
-                testResult = "成功：200 ✓"
-            } else {
-                // 显示状态码 + 服务端返回体片段，便于定位（401=Token 错，404=路径/服务不对）
-                let snippet = body.prefix(60)
-                testResult = "失败：HTTP \(http.statusCode) \(snippet)"
-            }
+            let elapsed = try await HTTPSyncService().testConnection(address: address, token: token)
+            testResult = String(format: "成功：%.0f ms", elapsed * 1_000)
+        } catch let error as SyncNetworkError {
+            testResult = "失败：\(error.localizedDescription)"
         } catch {
             let nsError = error as NSError
             let detail: String
@@ -72,6 +94,7 @@ struct SettingsView: View {
     private func resetToDefaultServer() {
         settings.serverHost = ""
         settings.serverPort = "443"
+        settings.serverScheme = "https"
         settings.apiToken = ""
         settings.persist()
         testResult = "已重置：请填写你自己的服务器地址与 Token"
@@ -82,11 +105,18 @@ struct SettingsView: View {
             List {
                 // MARK: - 服务器连接
                 Section {
+                    Picker("协议", selection: Bindable(settings).serverScheme) {
+                        Text("HTTPS").tag("https")
+                        Text("HTTP").tag("http")
+                    }
+                    .pickerStyle(.segmented)
+                    .onChange(of: settings.serverScheme) { _, _ in settings.persist() }
                     VStack(alignment: .leading, spacing: 6) {
                         Text("服务器地址")
                             .font(.caption)
                             .foregroundStyle(.secondary)
-                        TextField("例如 https://隧道域名或服务器地址", text: Bindable(settings).serverHost)
+                        TextField("例如 example.com 或 https://example.com:8443",
+                                  text: Bindable(settings).serverHost)
                             .font(.system(.body, design: .monospaced))
                             .textInputAutocapitalization(.never)
                             .autocorrectionDisabled()
@@ -136,7 +166,7 @@ struct SettingsView: View {
                 } header: {
                     Label("服务器连接", systemImage: "server.rack")
                 } footer: {
-                    Text("当前目标：https://\(settings.serverHost):\(settings.serverPort)/api/ingest")
+                    Text("当前目标：\(settings.ingestURL?.absoluteString ?? "请填写有效地址")")
                 }
 
                 // MARK: - 数据范围
@@ -146,13 +176,13 @@ struct SettingsView: View {
                             Text(mode.displayName).tag(mode)
                         }
                     }
-                    .onChange(of: settings.syncMode) { _ in settings.persist() }
+                    .onChange(of: settings.syncMode) { _, _ in settings.persist() }
                     Picker("回溯范围", selection: Bindable(settings).lookback) {
                         ForEach(LookbackRange.allCases) { range in
                             Text(range.displayName).tag(range)
                         }
                     }
-                    .onChange(of: settings.lookback) { _ in settings.persist() }
+                    .onChange(of: settings.lookback) { _, _ in settings.persist() }
                     NavigationLink {
                         DataTypePickerView(selected: Bindable(settings).enabledTypes) {
                             settings.persist()
@@ -172,7 +202,9 @@ struct SettingsView: View {
                 // MARK: - 同步控制
                 Section {
                     Toggle("打开 App 自动同步", isOn: Bindable(settings).autoSyncOnActive)
-                    Toggle("失败后重试", isOn: Bindable(settings).backgroundRetry)
+                        .onChange(of: settings.autoSyncOnActive) { _, _ in settings.persist() }
+                    Toggle("上传失败自动重试", isOn: Bindable(settings).retryFailedUploads)
+                        .onChange(of: settings.retryFailedUploads) { _, _ in settings.persist() }
 
                     Button {
                         Task {
@@ -227,32 +259,32 @@ struct SettingsView: View {
                 Section {
                     Button {
                         Task {
-                            // 点它时即便显示已授权也重新核对真实状态并打印诊断。
-                            await SyncCoordinator.shared.refreshHealthAuthStatus()
-                            if !state.isHealthAuthorized {
-                                // 未授权（或 iOS 缓存导致）时主动发起系统授权请求。
-                                await SyncCoordinator.shared.requestAuthIfNeeded()
-                            }
+                            await SyncCoordinator.shared.requestAuthIfNeeded()
                         }
                     } label: {
                         HStack {
-                            Label(state.isHealthAuthorized ? "健康权限已授权" : "请求健康数据权限",
-                                  systemImage: state.isHealthAuthorized ? "checkmark.shield.fill" : "lock.shield.fill")
+                            Label(authorizationTitle, systemImage: authorizationIcon)
                             Spacer()
-                            if state.isHealthAuthorized {
-                                Text("已授权")
-                                    .font(.caption)
-                                    .padding(.horizontal, 8)
-                                    .padding(.vertical, 3)
-                                    .background(.green.opacity(0.15), in: Capsule())
-                                    .foregroundStyle(.green)
-                            }
+                            Text(authorizationBadge)
+                                .font(.caption)
+                                .padding(.horizontal, 8)
+                                .padding(.vertical, 3)
+                                .background(authorizationColor.opacity(0.15), in: Capsule())
+                                .foregroundStyle(authorizationColor)
+                        }
+                    }
+                    if state.healthAuthorizationState == .requested {
+                        Button {
+                            guard let url = URL(string: UIApplication.openSettingsURLString) else { return }
+                            openURL(url)
+                        } label: {
+                            Label("打开系统健康权限设置", systemImage: "gear")
                         }
                     }
                 } header: {
                     Label("健康权限", systemImage: "lock.shield.fill")
                 } footer: {
-                    Text("HealthSync 仅读取健康数据，绝不写入或上传到任何第三方。")
+                    Text("iOS 不会向 App 透露只读健康权限的最终授予状态。显示“已请求”表示系统授权流程已完成，不代表每种数据都已允许读取。")
                 }
 
                 // MARK: - 关于
