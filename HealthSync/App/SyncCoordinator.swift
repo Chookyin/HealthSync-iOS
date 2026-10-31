@@ -12,6 +12,7 @@ public enum SyncResult: Equatable, Sendable {
 enum SyncOrigin: Sendable {
     case foregroundAutomatic
     case manual
+    case shortcut
     case healthKit
     case appRefresh
     case processing
@@ -25,7 +26,7 @@ enum SyncOrigin: Sendable {
     }
 
     var usesBackgroundOverlap: Bool {
-        self == .healthKit || self == .appRefresh
+        self == .healthKit || self == .appRefresh || self == .shortcut
     }
 }
 

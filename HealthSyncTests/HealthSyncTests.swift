@@ -110,6 +110,83 @@ final class HealthSyncCoreTests: XCTestCase {
         )
     }
 
+    func testShortcutSyncPolicyQueuesFullHistory() {
+        XCTAssertEqual(
+            ShortcutSyncPolicy.executionMode(
+                cursor: .empty,
+                syncMode: .incremental
+            ),
+            .incremental
+        )
+        XCTAssertEqual(
+            ShortcutSyncPolicy.executionMode(
+                cursor: .empty,
+                syncMode: .fullThenIncremental
+            ),
+            .fullHistory
+        )
+        XCTAssertEqual(
+            ShortcutSyncPolicy.executionMode(
+                cursor: SyncCursor(completedFullSyncAt: Date()),
+                syncMode: .fullThenIncremental
+            ),
+            .incremental
+        )
+        XCTAssertEqual(
+            ShortcutSyncPolicy.executionMode(
+                cursor: SyncCursor(completedFullSyncAt: Date()),
+                syncMode: .alwaysFull
+            ),
+            .fullHistory
+        )
+    }
+
+    func testShortcutJobStoreRecoversInterruptedJob() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: directory,
+            withIntermediateDirectories: true
+        )
+        defer { try? FileManager.default.removeItem(at: directory) }
+
+        let fileURL = directory.appendingPathComponent("jobs.json")
+        let store = ShortcutSyncJobStore(fileURL: fileURL)
+        let now = Date()
+        let job = ShortcutSyncJob(
+            id: UUID(),
+            createdAt: now,
+            updatedAt: now,
+            state: .running,
+            requiresFullHistory: false,
+            attemptCount: 1,
+            sampleCount: 0,
+            batchCount: 0,
+            lastError: nil
+        )
+        store.insert(job)
+
+        XCTAssertEqual(store.latestPending()?.id, job.id)
+        store.markRunningJobsInterrupted(error: "interrupted")
+
+        let reloaded = ShortcutSyncJobStore(fileURL: fileURL)
+        let recovered = try XCTUnwrap(reloaded.latestPending())
+        XCTAssertEqual(recovered.state, .queued)
+        XCTAssertEqual(recovered.lastError, "interrupted")
+    }
+
+    func testKeychainAccessibilityMigrationKeepsCredentialsReadable() throws {
+        let store = KeychainStore(
+            service: "com.example.HealthSyncTests.\(UUID().uuidString)"
+        )
+        defer { try? store.deleteAll() }
+
+        try store.save("test-token", for: .apiToken)
+        try store.migrateAccessibility()
+
+        XCTAssertEqual(store.read(.apiToken), "test-token")
+    }
+
     func testBackgroundDeliveryReconfiguresWhenSleepStageChanges() {
         XCTAssertTrue(
             BackgroundDeliveryPolicy.needsReconfiguration(

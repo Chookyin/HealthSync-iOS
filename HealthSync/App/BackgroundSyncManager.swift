@@ -79,18 +79,34 @@ final class BackgroundSyncManager {
     }
 
     func scheduleBackgroundTasks() {
-        guard settings.backgroundSyncEnabled,
-              settings.serverAddress != nil,
-              !settings.normalizedAPIToken.isEmpty else {
-            cancelBackgroundTasks()
-            return
+        let configurationReady = settings.serverAddress != nil
+            && !settings.normalizedAPIToken.isEmpty
+        let regularBackgroundReady = settings.backgroundSyncEnabled
+            && configurationReady
+        let shortcutBackgroundReady = settings.shortcutsSyncEnabled
+            && configurationReady
+            && ShortcutSyncService.shared.hasPendingJob
+
+        if shortcutBackgroundReady {
+            cancelRefreshTask()
+            scheduleRefreshTask(earliestDelay: 5 * 60)
+        } else if regularBackgroundReady {
+            scheduleRefreshTask(earliestDelay: 30 * 60)
+        } else {
+            cancelRefreshTask()
         }
 
-        scheduleRefreshTask()
         scheduleProcessingTaskIfNeeded()
     }
 
-    func backgroundSyncDidFinish(_ result: SyncResult) {
+    func backgroundSyncDidFinish(_ result: SyncResult,
+                                 shortcutJobID: UUID? = nil) {
+        if let shortcutJobID {
+            ShortcutSyncService.shared.finishBackgroundJob(
+                id: shortcutJobID,
+                result: result
+            )
+        }
         scheduleBackgroundTasks()
         if case .failed(let message) = result {
             Logger.error("后台同步未完成：\(message)")
@@ -102,17 +118,23 @@ final class BackgroundSyncManager {
     }
 
     private func applyBackgroundConfiguration() async {
-        guard settings.backgroundSyncEnabled,
-              settings.serverAddress != nil,
+        guard settings.backgroundSyncEnabled else {
+            await healthDelivery.stop()
+            scheduleBackgroundTasks()
+            return
+        }
+
+        guard settings.serverAddress != nil,
               !settings.normalizedAPIToken.isEmpty else {
             await healthDelivery.stop()
-            cancelBackgroundTasks()
+            scheduleBackgroundTasks()
             return
         }
 
         let types = settings.enabledTypes.intersection(settings.requestedHealthTypes)
         guard !types.isEmpty else {
             await healthDelivery.stop()
+            scheduleBackgroundTasks()
             return
         }
 
@@ -132,11 +154,30 @@ final class BackgroundSyncManager {
     }
 
     private func handleRefreshTask(_ task: BGAppRefreshTask) {
-        scheduleRefreshTask()
+        scheduleRefreshTask(earliestDelay: 30 * 60)
+        if let job = ShortcutSyncService.shared.claimPendingJobForBackground() {
+            runBackgroundTask(
+                task,
+                origin: .shortcut,
+                fullSync: job.requiresFullHistory,
+                shortcutJobID: job.id
+            )
+            return
+        }
         runBackgroundTask(task, origin: .appRefresh)
     }
 
     private func handleProcessingTask(_ task: BGProcessingTask) {
+        if let job = ShortcutSyncService.shared.claimPendingJobForBackground() {
+            runBackgroundTask(
+                task,
+                origin: .shortcut,
+                fullSync: job.requiresFullHistory,
+                shortcutJobID: job.id
+            )
+            return
+        }
+
         let cursor = cursorStore.load()
         let needsFullHistory = BackgroundSyncPolicy.needsInitialFullSync(
             cursor: cursor,
@@ -151,12 +192,24 @@ final class BackgroundSyncManager {
 
     private func runBackgroundTask(_ task: BGTask,
                                    origin: SyncOrigin,
-                                   fullSync: Bool = false) {
-        guard settings.backgroundSyncEnabled,
+                                   fullSync: Bool = false,
+                                   shortcutJobID: UUID? = nil) {
+        let shortcutEnabled = settings.shortcutsSyncEnabled
+        let regularBackgroundEnabled = settings.backgroundSyncEnabled
+        let originEnabled = origin == .shortcut
+            ? shortcutEnabled
+            : regularBackgroundEnabled
+        guard originEnabled,
               settings.serverAddress != nil,
               !settings.normalizedAPIToken.isEmpty else {
+            if let shortcutJobID {
+                ShortcutSyncService.shared.finishBackgroundJob(
+                    id: shortcutJobID,
+                    result: .failed("后台同步配置不可用")
+                )
+            }
             task.setTaskCompleted(success: false)
-            cancelBackgroundTasks()
+            scheduleBackgroundTasks()
             return
         }
 
@@ -174,34 +227,54 @@ final class BackgroundSyncManager {
             let result = await operation.value
             let completed = result == .success || result == .alreadySyncing
             task.setTaskCompleted(success: completed)
-            self?.backgroundSyncDidFinish(result)
+            self?.backgroundSyncDidFinish(
+                result,
+                shortcutJobID: shortcutJobID
+            )
         }
     }
 
-    private func scheduleRefreshTask() {
+    private func scheduleRefreshTask(earliestDelay: TimeInterval) {
         let request = BGAppRefreshTaskRequest(identifier: Self.refreshTaskIdentifier)
-        request.earliestBeginDate = Date(timeIntervalSinceNow: 30 * 60)
+        request.earliestBeginDate = Date(
+            timeIntervalSinceNow: earliestDelay
+        )
         submit(request)
     }
 
     private func scheduleProcessingTaskIfNeeded() {
         let cursor = cursorStore.load()
-        guard BackgroundSyncPolicy.needsInitialFullSync(
+        let configurationReady = settings.serverAddress != nil
+            && !settings.normalizedAPIToken.isEmpty
+        let shortcutJob = settings.shortcutsSyncEnabled && configurationReady
+            ? ShortcutSyncService.shared.jobs().first(where: \.isPending)
+            : nil
+        let needsRegularFullHistory = settings.backgroundSyncEnabled
+            && configurationReady
+            && BackgroundSyncPolicy.needsInitialFullSync(
             cursor: cursor,
             mode: settings.syncMode
-        ) else {
+        )
+        guard shortcutJob != nil || needsRegularFullHistory else {
             BGTaskScheduler.shared.cancel(
                 taskRequestWithIdentifier: Self.processingTaskIdentifier
             )
             return
         }
 
+        if shortcutJob != nil {
+            BGTaskScheduler.shared.cancel(
+                taskRequestWithIdentifier: Self.processingTaskIdentifier
+            )
+        }
         let request = BGProcessingTaskRequest(
             identifier: Self.processingTaskIdentifier
         )
         request.requiresNetworkConnectivity = true
-        request.requiresExternalPower = true
-        request.earliestBeginDate = Date(timeIntervalSinceNow: 2 * 60 * 60)
+        request.requiresExternalPower = shortcutJob == nil
+        request.earliestBeginDate = Date(
+            timeIntervalSinceNow: shortcutJob == nil ? 2 * 60 * 60 : 60
+        )
         submit(request)
     }
 
@@ -213,14 +286,12 @@ final class BackgroundSyncManager {
         }
     }
 
-    private func cancelBackgroundTasks() {
+    private func cancelRefreshTask() {
         BGTaskScheduler.shared.cancel(
             taskRequestWithIdentifier: Self.refreshTaskIdentifier
         )
-        BGTaskScheduler.shared.cancel(
-            taskRequestWithIdentifier: Self.processingTaskIdentifier
-        )
     }
+
 }
 
 enum BackgroundSyncPolicy {

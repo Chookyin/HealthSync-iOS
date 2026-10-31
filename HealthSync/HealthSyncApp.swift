@@ -5,7 +5,14 @@ import UIKit
 final class HealthSyncAppDelegate: NSObject, UIApplicationDelegate {
     func application(_ application: UIApplication,
                      didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
+        _ = BackgroundUploadSession.shared
+        BackgroundUploadSession.shared.setRecoveryHandler {
+            Task { @MainActor in
+                ShortcutSyncService.shared.recoverInterruptedJobs()
+            }
+        }
         BackgroundSyncManager.shared.registerTaskHandlers()
+        ShortcutSyncService.shared.recoverInterruptedJobs()
         Task {
             await BackgroundSyncManager.shared.refreshBackgroundConfiguration()
         }
@@ -15,6 +22,10 @@ final class HealthSyncAppDelegate: NSObject, UIApplicationDelegate {
     func application(_ application: UIApplication,
                      handleEventsForBackgroundURLSession identifier: String,
                      completionHandler: @escaping () -> Void) {
+        guard identifier == BackgroundUploadSession.sessionIdentifier else {
+            completionHandler()
+            return
+        }
         BackgroundUploadSession.shared.storeBackgroundEventsCompletion(completionHandler)
     }
 }

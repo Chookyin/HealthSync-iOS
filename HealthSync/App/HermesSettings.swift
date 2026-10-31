@@ -41,6 +41,7 @@ public final class HermesSettings {
     public var requestedHealthTypes: Set<HealthDataType> = []
     public var autoSyncOnActive: Bool = true
     public var backgroundSyncEnabled: Bool = true
+    public var shortcutsSyncEnabled: Bool = false
     public var retryFailedUploads: Bool = true
 
     // 主题
@@ -119,6 +120,7 @@ public final class HermesSettings {
         }
         autoSyncOnActive = defaults.object(forKey: "autoSyncOnActive") as? Bool ?? true
         backgroundSyncEnabled = defaults.object(forKey: "backgroundSyncEnabled") as? Bool ?? true
+        shortcutsSyncEnabled = defaults.object(forKey: "shortcutsSyncEnabled") as? Bool ?? false
         retryFailedUploads = defaults.object(forKey: "retryFailedUploads") as? Bool
             ?? defaults.object(forKey: "backgroundRetry") as? Bool
             ?? true
@@ -139,6 +141,8 @@ public final class HermesSettings {
                 defaults.set(true, forKey: Self.fullEnabledTypesKey)
             }
         }
+
+        try? keychain.migrateAccessibility()
     }
 
     public func persist() {
@@ -166,6 +170,7 @@ public final class HermesSettings {
         }
         defaults.set(autoSyncOnActive, forKey: "autoSyncOnActive")
         defaults.set(backgroundSyncEnabled, forKey: "backgroundSyncEnabled")
+        defaults.set(shortcutsSyncEnabled, forKey: "shortcutsSyncEnabled")
         defaults.set(retryFailedUploads, forKey: "retryFailedUploads")
         defaults.removeObject(forKey: "backgroundRetry")
         defaults.set(colorScheme.rawValue, forKey: "colorScheme")

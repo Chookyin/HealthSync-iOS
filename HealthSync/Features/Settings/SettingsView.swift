@@ -12,6 +12,7 @@ struct SettingsView: View {
     @State private var syncResultOK = false
     @State private var testing = false
     @State private var testResult: String?
+    @State private var shortcutJob: ShortcutSyncJob?
 
     /// 从 Info.plist 读取真实版本号（部署验证用）。
     private var appVersion: String {
@@ -215,6 +216,26 @@ struct SettingsView: View {
                                 }
                             }
                         }
+                    Toggle("允许快捷指令同步", isOn: Bindable(settings).shortcutsSyncEnabled)
+                        .onChange(of: settings.shortcutsSyncEnabled) { _, enabled in
+                            settings.persist()
+                            Task { @MainActor in
+                                if !enabled {
+                                    ShortcutSyncService.shared.disablePendingJobs()
+                                }
+                                BackgroundSyncManager.shared.scheduleBackgroundTasks()
+                                refreshShortcutJob()
+                            }
+                        }
+                    if let shortcutJob {
+                        HStack {
+                            Label("最近快捷指令", systemImage: "clock.arrow.circlepath")
+                            Spacer()
+                            Text(shortcutJobStatus(shortcutJob))
+                                .font(.caption)
+                                .foregroundStyle(shortcutJobColor(shortcutJob))
+                        }
+                    }
                     Toggle("上传失败自动重试", isOn: Bindable(settings).retryFailedUploads)
                         .onChange(of: settings.retryFailedUploads) { _, _ in settings.persist() }
 
@@ -247,6 +268,7 @@ struct SettingsView: View {
                 } header: {
                     Label("同步控制", systemImage: "bolt.fill")
                 } footer: {
+                    Text("快捷指令同步启用后，可在“快捷指令”或 Siri 中运行“同步健康数据”，无需每次打开 App。")
                     if let last = state.lastSyncAt {
                         Text("上次同步：\(last.formatted(date: .abbreviated, time: .shortened))")
                     }
@@ -315,12 +337,39 @@ struct SettingsView: View {
                 // 设置页出现时读取 HealthKit 真实授权状态并刷新 UI（问题 1）。
                 await SyncCoordinator.shared.refreshHealthAuthStatus()
                 await BackgroundSyncManager.shared.refreshBackgroundConfiguration()
+                refreshShortcutJob()
             }
             .alert("同步结果", isPresented: $showSyncResult) {
                 Button("好", role: .cancel) {}
             } message: {
                 Text(syncResultMessage)
             }
+        }
+    }
+
+    private func refreshShortcutJob() {
+        shortcutJob = ShortcutSyncService.shared.jobs()
+            .max(by: { $0.updatedAt < $1.updatedAt })
+    }
+
+    private func shortcutJobStatus(_ job: ShortcutSyncJob) -> String {
+        switch job.state {
+        case .queued: return "等待后台执行"
+        case .running: return "后台执行中"
+        case .succeeded: return "已完成"
+        case .failed:
+            if let error = job.lastError, !error.isEmpty {
+                return "失败：\(error)"
+            }
+            return "失败"
+        }
+    }
+
+    private func shortcutJobColor(_ job: ShortcutSyncJob) -> Color {
+        switch job.state {
+        case .queued, .running: return .orange
+        case .succeeded: return .green
+        case .failed: return .red
         }
     }
 }
