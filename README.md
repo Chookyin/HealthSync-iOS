@@ -2,7 +2,7 @@
 
 把 iPhone 的 Apple HealthKit 数据（活动 / 心率 / 睡眠 / 体重等）通过自建服务器安全同步到本地归档（Obsidian / 数据库 / 任意自托管）。
 
-- **iOS App（SwiftUI / Swift 6）**：订阅 HealthKit 全量类型，增量游标 + fingerprint 去重，打开 App 即同步。
+- **iOS App（SwiftUI / Swift 6）**：订阅 HealthKit 全量类型，增量游标 + fingerprint 去重，支持前台与系统调度的后台同步。
 - **Server 端（FastAPI）**：`server/health_api_server.py` 接收并落盘样本，可按天写入 Obsidian Vault 的 `data/raw/`。
 - 支持局域网直连或公网 HTTPS 隧道（如 Cloudflare Quick Tunnel）。
 
@@ -13,20 +13,23 @@
 ## 架构
 
 ```text
-┌─────────────┐ HTTPS/本地HTTP + Token  ┌──────────────────┐
-│   iPhone     │ ───────────────────────▶ │   Server (8765)  │
-│  HealthSync  │                          │  health_api_server│
-│   (SwiftUI)  │ ◀─────────────────────── │  (FastAPI + uvicorn) │
-└─────────────┘                          └────────┬─────────┘
-                                                  │ 写盘
-                                        ┌─────────▼─────────┐
-                                        │ Obsidian Vault     │
-                                        │ data/raw/YYYY-MM-DD.json
-                                        └───────────────────┘
+HealthKit ──▶ HKObserverQuery / BGTaskScheduler
+                        │
+                        ▼
+                 SyncCoordinator
+                        │
+        HTTPS / 本地 HTTP + Bearer Token
+                        │
+                        ▼
+                FastAPI Server (8765)
+                        │
+                        ▼
+      data/raw/YYYY-MM-DD.json（精简记录）
 ```
 
 - 推荐在服务器前挂 **Cloudflare Quick Tunnel**（或 Nginx + TLS），App 端走 HTTPS + 域名（ATS 放行），无需自签证书。
 - Token 认证：请求头 `Authorization: Bearer <token>`，服务端通过环境变量 `HEALTH_API_TOKEN` 校验。
+- 上传使用逐页查询与后台上传；服务端按内容哈希幂等去重并自动精简落盘字段。
 
 ---
 
@@ -86,13 +89,17 @@ Xcode 里：
 
 点「测试连接」，绿色即通。然后回首页点同步。
 
+至少先完成一次前台同步，并允许访问健康数据和本地网络。后台任务只有在 HealthKit 授权、服务器地址与 Token 均有效后才会排期。
+
 ---
 
 ## 功能
 
 - [x] 全量 / 增量 / 强制全量三种同步模式
 - [x] SHA-256 数据指纹 + UUID 去重（幂等重放）
-- [x] 打开 App 自动同步 + 上传失败自动重试
+- [x] HealthKit 后台投递 + `BGAppRefreshTask` 定期补扫 + `BGProcessingTask` 首次回填
+- [x] 可恢复的后台 `URLSession` 上传 + 失败自动重试
+- [x] 打开 App 自动同步
 - [x] 逐页查询、逐页上传，避免全量历史占用内存
 - [x] ECG 分类、平均心率、采样率与电压波形
 - [x] 设置持久化（Keychain 存连接信息、UserDefaults 存同步配置）
@@ -120,6 +127,44 @@ Xcode 里：
 
 后端按 `startDate` 和 `HEALTH_TIMEZONE`（默认 UTC）落到 `data/raw/YYYY-MM-DD.json`。
 
+## 后台同步
+
+后台同步由四层组成：
+
+1. `HKObserverQuery` 在已授权的健康数据类型变化后唤醒 App，只查询发生变化的类型。
+2. `BGAppRefreshTask` 约每 30 分钟申请一次短期补扫，实际执行时间由 iOS 决定。
+3. `BGProcessingTask` 在“首次全量后增量”模式且尚未完成全量时运行，要求联网和外部电源。
+4. `URLSession` 后台会话以临时文件上传请求体，App 挂起时由系统继续传输。
+
+设置页可单独关闭“后台自动同步”。iOS 不保证固定执行间隔，也不保证用户手动强制退出 App 后仍继续调度；服务器端仍需保留 UUID / fingerprint 幂等去重。
+
+工程已配置：
+
+- HealthKit capability 中的 Background Delivery entitlement
+- `fetch`、`processing` 后台模式
+- 两个 `BGTaskSchedulerPermittedIdentifiers`
+
+更换 Bundle ID 后，Xcode 仍会从构建变量自动展开任务标识；真机运行前请重新确认 HealthKit capability 和签名团队。
+
+部分 HealthKit 类型可能不支持 Background Delivery，App 会保留其余可用类型并记录失败项。后台短任务只回看较短时间窗口；首次全量回填失败时会保留 `completedFullSyncAt = nil`，下次继续重试。
+
+## 验证状态
+
+当前本地已验证：
+
+- Swift 6 严格并发构建通过。
+- iPhone 17 Pro 模拟器 XCTest `12/12` 通过，覆盖地址解析、同步窗口、稳定指纹、游标迁移、类别映射、后台策略、401 不重试、503 重试和取消传播。
+- 签名版 App 可安装启动，HealthKit 授权页面可正常弹出，启动进程无 App 错误或崩溃。
+- 服务端 pytest `8/8` 通过，覆盖鉴权、请求校验、内容去重、ECG 波形、损坏文件恢复和 CORS。
+- 运行中服务健康检查正常，精简数据格式正确，现有记录不含 UUID / fingerprint 字段。
+
+仍需真机确认：
+
+- `HKObserverQuery` 在真实 HealthKit 数据变化后的后台唤醒。
+- `BGAppRefreshTask`、`BGProcessingTask` 的实际执行时机，由 iOS 动态决定，无法在模拟器中强制保证。
+- App 被挂起或进程回收后，后台 `URLSession` 的最终完成与服务器落盘。
+- 锁屏状态下通过局域网 HTTP 访问服务器。
+
 ## 自定义坑（亲身经历）
 
 ### ① HTTPS 是硬门槛
@@ -139,17 +184,19 @@ Xcode 里：
 
 ```
 .
-├── HealthSync.xcodeproj      # Xcode 工程
+├── .github/workflows/ci.yml   # GitHub Actions
+├── HealthSync.xcodeproj       # Xcode 工程
 ├── HealthSync/                # iOS 源码（SwiftUI）
-├── HealthSyncTests/           # XCTest 单元测试
-│   ├── App/                   # App 入口、同步协调器、设置模型
+│   ├── App/                   # App 入口、同步协调、后台任务
 │   ├── Core/                  # 模型、DTO、工具
 │   ├── Features/              # 设置页 / 数据看板
 │   ├── Services/              # HealthKit、网络、Keychain
 │   └── Resources/             # Info.plist、图标
+├── HealthSyncTests/           # XCTest 单元测试
 └── server/
     ├── health_api_server.py   # FastAPI 接收端
     ├── requirements-dev.txt   # 服务端测试依赖
+    ├── run-local.sh           # 本地服务启动脚本
     ├── tests/                 # pytest 服务端测试
     └── README.md              # 服务端部署详细文档
 ```
@@ -157,11 +204,18 @@ Xcode 里：
 ## 测试
 
 ```bash
-# iOS：本地编译 XCTest
+# iOS：编译并要求测试目标完整构建
 xcodebuild build-for-testing \
   -project HealthSync.xcodeproj \
   -scheme HealthSync \
   -destination 'generic/platform=iOS' \
+  CODE_SIGNING_ALLOWED=NO
+
+# iOS：在模拟器执行 XCTest（按本机可用设备修改名称）
+xcodebuild test \
+  -project HealthSync.xcodeproj \
+  -scheme HealthSync \
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro' \
   CODE_SIGNING_ALLOWED=NO
 
 # Server
@@ -171,7 +225,7 @@ python3 -m venv .venv
 .venv/bin/pytest
 ```
 
-GitHub Actions 会运行 Swift 6 构建、iOS 模拟器 XCTest，以及 Python 3.9/3.12 服务端测试。
+GitHub Actions 会运行 Swift 6 构建、iOS 模拟器 XCTest，以及 Python 3.9/3.12 服务端测试。后台系统调度和 HealthKit 真机行为不能仅靠 CI 模拟器证明，发布前仍需完成一次真机验证。
 
 > `HealthSync/Features/Dashboard/` 等看板 UI 依赖本地自定义解析器，服务端未附带；只依赖 `data/raw` 的数据流已完整可跑。
 

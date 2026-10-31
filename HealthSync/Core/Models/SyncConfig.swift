@@ -14,6 +14,8 @@ public struct SyncConfig: Codable, Sendable, Equatable {
     public var retryBackoffBase: TimeInterval
     /// 增量同步时向过去重叠查询的时间（秒），用于捕获延迟写入的历史数据。
     public var incrementalOverlap: TimeInterval
+    /// 后台短任务向过去重叠查询的时间（秒）。比前台窗口短，避免刷新任务超时。
+    public var backgroundIncrementalOverlap: TimeInterval
 
     public static let `default` = SyncConfig(
         batchSize: 2000,
@@ -21,7 +23,8 @@ public struct SyncConfig: Codable, Sendable, Equatable {
         requestTimeout: 30,
         maxRetryCount: 3,
         retryBackoffBase: 2.0,
-        incrementalOverlap: 7 * 24 * 60 * 60
+        incrementalOverlap: 7 * 24 * 60 * 60,
+        backgroundIncrementalOverlap: 24 * 60 * 60
     )
 
     public init(batchSize: Int = 2000,
@@ -29,13 +32,15 @@ public struct SyncConfig: Codable, Sendable, Equatable {
                 requestTimeout: TimeInterval = 30,
                 maxRetryCount: Int = 3,
                 retryBackoffBase: TimeInterval = 2.0,
-                incrementalOverlap: TimeInterval = 7 * 24 * 60 * 60) {
+                incrementalOverlap: TimeInterval = 7 * 24 * 60 * 60,
+                backgroundIncrementalOverlap: TimeInterval = 24 * 60 * 60) {
         self.batchSize = batchSize
         self.uploadBatchSize = uploadBatchSize
         self.requestTimeout = requestTimeout
         self.maxRetryCount = maxRetryCount
         self.retryBackoffBase = retryBackoffBase
         self.incrementalOverlap = incrementalOverlap
+        self.backgroundIncrementalOverlap = backgroundIncrementalOverlap
     }
 }
 

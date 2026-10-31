@@ -89,11 +89,21 @@ public struct ServerAddress: Sendable, Equatable {
 public struct HTTPSyncService: Sendable {
     private let config: SyncConfig
     private let keychain: KeychainStore
+    private let uploadTransport: any UploadTransport
 
     public init(config: SyncConfig = .default,
                 keychain: KeychainStore = KeychainStore()) {
+        self.init(config: config,
+                  keychain: keychain,
+                  uploadTransport: BackgroundUploadSession.shared)
+    }
+
+    init(config: SyncConfig,
+         keychain: KeychainStore,
+         uploadTransport: any UploadTransport) {
         self.config = config
         self.keychain = keychain
+        self.uploadTransport = uploadTransport
     }
 
     /// 组装完整的 /api/ingest 地址。
@@ -146,7 +156,7 @@ public struct HTTPSyncService: Sendable {
 
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
-        request.httpBody = try encoder.encode(payload)
+        let body = try encoder.encode(payload)
 
         let maxRetries = retries ?? config.maxRetryCount
         var attempt = 0
@@ -156,13 +166,10 @@ public struct HTTPSyncService: Sendable {
             try Task.checkCancellation()
             var retryAfter: TimeInterval?
             do {
-                let (_, response) = try await URLSession.shared.data(for: request)
-                guard let http = response as? HTTPURLResponse else {
-                    throw SyncNetworkError.emptyResponse
-                }
-                guard (200..<300).contains(http.statusCode) else {
-                    retryAfter = Self.retryAfter(from: http)
-                    throw SyncNetworkError.badStatus(http.statusCode)
+                let response = try await uploadTransport.upload(data: body, request: request)
+                guard (200..<300).contains(response.statusCode) else {
+                    retryAfter = Self.retryAfter(from: response.retryAfter)
+                    throw SyncNetworkError.badStatus(response.statusCode)
                 }
                 return
             } catch is CancellationError {
@@ -243,10 +250,8 @@ public struct HTTPSyncService: Sendable {
             || (500...599).contains(statusCode)
     }
 
-    private static func retryAfter(from response: HTTPURLResponse) -> TimeInterval? {
-        guard let value = response.value(forHTTPHeaderField: "Retry-After") else {
-            return nil
-        }
+    private static func retryAfter(from value: String?) -> TimeInterval? {
+        guard let value else { return nil }
         if let seconds = TimeInterval(value.trimmingCharacters(in: .whitespaces)) {
             return max(0, seconds)
         }

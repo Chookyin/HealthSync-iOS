@@ -68,6 +68,7 @@ struct SettingsView: View {
         do {
             let elapsed = try await HTTPSyncService().testConnection(address: address, token: token)
             testResult = String(format: "成功：%.0f ms", elapsed * 1_000)
+            await BackgroundSyncManager.shared.refreshBackgroundConfiguration()
         } catch let error as SyncNetworkError {
             testResult = "失败：\(error.localizedDescription)"
         } catch {
@@ -203,6 +204,17 @@ struct SettingsView: View {
                 Section {
                     Toggle("打开 App 自动同步", isOn: Bindable(settings).autoSyncOnActive)
                         .onChange(of: settings.autoSyncOnActive) { _, _ in settings.persist() }
+                    Toggle("后台自动同步", isOn: Bindable(settings).backgroundSyncEnabled)
+                        .onChange(of: settings.backgroundSyncEnabled) { _, enabled in
+                            settings.persist()
+                            Task {
+                                if enabled {
+                                    await BackgroundSyncManager.shared.refreshBackgroundConfiguration()
+                                } else {
+                                    await BackgroundSyncManager.shared.disableBackgroundWork()
+                                }
+                            }
+                        }
                     Toggle("上传失败自动重试", isOn: Bindable(settings).retryFailedUploads)
                         .onChange(of: settings.retryFailedUploads) { _, _ in settings.persist() }
 
@@ -296,9 +308,13 @@ struct SettingsView: View {
                 }
             }
             .navigationTitle("设置")
+            .onChange(of: settings.enabledTypes) { _, _ in
+                Task { await BackgroundSyncManager.shared.refreshBackgroundConfiguration() }
+            }
             .task {
                 // 设置页出现时读取 HealthKit 真实授权状态并刷新 UI（问题 1）。
                 await SyncCoordinator.shared.refreshHealthAuthStatus()
+                await BackgroundSyncManager.shared.refreshBackgroundConfiguration()
             }
             .alert("同步结果", isPresented: $showSyncResult) {
                 Button("好", role: .cancel) {}

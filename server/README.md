@@ -25,6 +25,20 @@ export OBSIDIAN_VAULT='/path/to/vault'
 uvicorn health_api_server:app --host 0.0.0.0 --port 8765
 ```
 
+仓库提供了 `run-local.sh`。在本目录创建被 Git 忽略的 `.env` 后可直接启动：
+
+```bash
+HEALTH_API_TOKEN='...'
+OBSIDIAN_VAULT='/path/to/vault'
+HEALTH_API_HOST='0.0.0.0'
+HEALTH_API_PORT='8765'
+HEALTH_TIMEZONE='UTC'
+```
+
+```bash
+./run-local.sh
+```
+
 ## 接口
 
 | 方法 | 路径 | 说明 |
@@ -43,3 +57,14 @@ uvicorn health_api_server:app --host 0.0.0.0 --port 8765
 ## 安全提示
 - **务必设置你的 `HEALTH_API_TOKEN`**，示例/默认值已被移除，未设置无法启动。
 - 公网部署强烈建议加 Cloudflare Tunnel / 防火墙限制端口。
+
+## 测试
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements-dev.txt
+pytest
+```
+
+测试覆盖 Bearer Token、Pydantic 请求校验、内容去重、ECG 波形、旧数据迁移、损坏文件备份和默认关闭的 CORS。

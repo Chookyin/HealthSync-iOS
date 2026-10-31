@@ -40,6 +40,7 @@ public final class HermesSettings {
     public var enabledTypes: Set<HealthDataType> = HealthDataType.defaultEnabled
     public var requestedHealthTypes: Set<HealthDataType> = []
     public var autoSyncOnActive: Bool = true
+    public var backgroundSyncEnabled: Bool = true
     public var retryFailedUploads: Bool = true
 
     // 主题
@@ -117,6 +118,7 @@ public final class HermesSettings {
             requestedHealthTypes = set
         }
         autoSyncOnActive = defaults.object(forKey: "autoSyncOnActive") as? Bool ?? true
+        backgroundSyncEnabled = defaults.object(forKey: "backgroundSyncEnabled") as? Bool ?? true
         retryFailedUploads = defaults.object(forKey: "retryFailedUploads") as? Bool
             ?? defaults.object(forKey: "backgroundRetry") as? Bool
             ?? true
@@ -163,6 +165,7 @@ public final class HermesSettings {
             defaults.set(data, forKey: "requestedHealthTypes")
         }
         defaults.set(autoSyncOnActive, forKey: "autoSyncOnActive")
+        defaults.set(backgroundSyncEnabled, forKey: "backgroundSyncEnabled")
         defaults.set(retryFailedUploads, forKey: "retryFailedUploads")
         defaults.removeObject(forKey: "backgroundRetry")
         defaults.set(colorScheme.rawValue, forKey: "colorScheme")

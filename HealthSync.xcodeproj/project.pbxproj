@@ -8,6 +8,9 @@
 
 /* Begin PBXBuildFile section */
 		A10000000000000000000001 /* HealthSyncTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000002 /* HealthSyncTests.swift */; };
+		B10000000000000000000001 /* App/BackgroundSyncManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000002 /* App/BackgroundSyncManager.swift */; };
+		B10000000000000000000003 /* Services/Network/BackgroundUploadSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000004 /* Services/Network/BackgroundUploadSession.swift */; };
+		B10000000000000000000005 /* Services/HealthKit/HealthKitBackgroundDelivery.swift in Sources */ = {isa = PBXBuildFile; fileRef = B10000000000000000000006 /* Services/HealthKit/HealthKitBackgroundDelivery.swift */; };
 		2E133C671DB84B009214CFE2 /* Features/Settings/SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3B77B3E684B4470BB5CB4842 /* Features/Settings/SettingsView.swift */; };
 		324E4B95C2D741939BEB92CE /* Services/HealthKit/HealthStoreProtocol.swift in Sources */ = {isa = PBXBuildFile; fileRef = ACCC86A4FA3C45F7A227BE35 /* Services/HealthKit/HealthStoreProtocol.swift */; };
 		353A9BF64BF74D5F886A1DA9 /* Core/Models/SyncConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = E865FAC14D97405CB0DCE206 /* Core/Models/SyncConfig.swift */; };
@@ -45,6 +48,9 @@
 /* Begin PBXFileReference section */
 		A10000000000000000000002 /* HealthSyncTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthSyncTests.swift; sourceTree = "<group>"; };
 		A10000000000000000000005 /* HealthSyncTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = HealthSyncTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		B10000000000000000000002 /* App/BackgroundSyncManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = App/BackgroundSyncManager.swift; sourceTree = "<group>"; };
+		B10000000000000000000004 /* Services/Network/BackgroundUploadSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/Network/BackgroundUploadSession.swift; sourceTree = "<group>"; };
+		B10000000000000000000006 /* Services/HealthKit/HealthKitBackgroundDelivery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/HealthKit/HealthKitBackgroundDelivery.swift; sourceTree = "<group>"; };
 		0705F8E0BC7245CEB6CEBC74 /* Core/Models/SyncCursor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Core/Models/SyncCursor.swift; sourceTree = "<group>"; };
 		18D48249F3BE45D9B68517ED /* Services/Security/KeychainStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Services/Security/KeychainStore.swift; sourceTree = "<group>"; };
 		1AC18A7000FB4713B68ECAEA /* Core/Utilities/DateRange.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Core/Utilities/DateRange.swift; sourceTree = "<group>"; };
@@ -101,6 +107,7 @@
 			isa = PBXGroup;
 			children = (
 				49F053C57EDE471F91EC1E78 /* App/AppState.swift */,
+				B10000000000000000000002 /* App/BackgroundSyncManager.swift */,
 				F6ED8D6C9E134514B8F24C53 /* App/HermesSettings.swift */,
 				CFEC3BBA21C1407E951124EA /* App/SyncCoordinator.swift */,
 				E4D905790DEB40D795FB5608 /* ContentView.swift */,
@@ -114,10 +121,12 @@
 				BCEF864AA5C94ADDB7E6A8E1 /* Features/Dashboard/DashboardView.swift */,
 				D2F8D6CE10D344628208036C /* Features/Dashboard/HealthCard.swift */,
 				3B7F1333F38C4A4CB23771D8 /* HealthSyncApp.swift */,
+				B10000000000000000000006 /* Services/HealthKit/HealthKitBackgroundDelivery.swift */,
 				A90D5B642D4F4B31A7807142 /* Services/HealthKit/HealthKitService.swift */,
 				2074C96DAD3A42BCB61A5001 /* Services/HealthKit/HealthSampleMapper.swift */,
 				ACCC86A4FA3C45F7A227BE35 /* Services/HealthKit/HealthStoreProtocol.swift */,
 				72361E0855894FD8A6C67C32 /* Services/Network/HTTPSyncService.swift */,
+				B10000000000000000000004 /* Services/Network/BackgroundUploadSession.swift */,
 				3805D055A62441F08AFF236D /* Services/Network/SyncBatchBuffer.swift */,
 				18D48249F3BE45D9B68517ED /* Services/Security/KeychainStore.swift */,
 				3B77B3E684B4470BB5CB4842 /* Features/Settings/SettingsView.swift */,
@@ -259,6 +268,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				5C02FF9E12D7471D9C2B0A1E /* App/AppState.swift in Sources */,
+				B10000000000000000000001 /* App/BackgroundSyncManager.swift in Sources */,
 				2E133C671DB84B009214CFE2 /* Features/Settings/SettingsView.swift in Sources */,
 				515F95DF12CB4073B4CE9D12 /* App/HermesSettings.swift in Sources */,
 				4839AA81F58442B9AEA1EDC4 /* App/SyncCoordinator.swift in Sources */,
@@ -273,10 +283,12 @@
 				E6837DD3B9A14300AE6013C6 /* Features/Dashboard/DashboardView.swift in Sources */,
 				CFBB50D1EB944286B18A55F7 /* Features/Dashboard/HealthCard.swift in Sources */,
 				54BBD078D28942779216E135 /* HealthSyncApp.swift in Sources */,
+				B10000000000000000000005 /* Services/HealthKit/HealthKitBackgroundDelivery.swift in Sources */,
 				CC6C414BD36543E0BB946D70 /* Services/HealthKit/HealthKitService.swift in Sources */,
 				5B4C502D848D4451BF727F92 /* Services/HealthKit/HealthSampleMapper.swift in Sources */,
 				324E4B95C2D741939BEB92CE /* Services/HealthKit/HealthStoreProtocol.swift in Sources */,
 				432DD272FFCA43BDA3EBF872 /* Services/Network/HTTPSyncService.swift in Sources */,
+				B10000000000000000000003 /* Services/Network/BackgroundUploadSession.swift in Sources */,
 				654FACE924E240EEA058A392 /* Services/Network/SyncBatchBuffer.swift in Sources */,
 				D2E1569D11F347E5BBDE5A37 /* Services/Security/KeychainStore.swift in Sources */,
 			);

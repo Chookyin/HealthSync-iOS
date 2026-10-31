@@ -7,14 +7,18 @@ public struct SyncCursor: Codable, Sendable, Equatable {
     public var lastSyncedAt: Date?
     /// 最后一次完整成功同步的完成时间，用于 UI 恢复。
     public var lastSuccessfulAt: Date?
+    /// 首次全量同步完成时间。可区分「增量成功」与「完整历史已成功」。
+    public var completedFullSyncAt: Date?
     /// 去重指纹（type + source 稳定哈希），防止重复上传。
     public var dedupFingerprint: String?
 
     public init(lastSyncedAt: Date? = nil,
                 lastSuccessfulAt: Date? = nil,
+                completedFullSyncAt: Date? = nil,
                 dedupFingerprint: String? = nil) {
         self.lastSyncedAt = lastSyncedAt
         self.lastSuccessfulAt = lastSuccessfulAt
+        self.completedFullSyncAt = completedFullSyncAt
         self.dedupFingerprint = dedupFingerprint
     }
 
@@ -24,6 +28,7 @@ public struct SyncCursor: Codable, Sendable, Equatable {
     public mutating func reset() {
         lastSyncedAt = nil
         lastSuccessfulAt = nil
+        completedFullSyncAt = nil
         dedupFingerprint = nil
     }
 }

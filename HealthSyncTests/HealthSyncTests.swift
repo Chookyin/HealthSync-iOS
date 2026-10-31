@@ -86,6 +86,148 @@ final class HealthSyncCoreTests: XCTestCase {
         let cursor = try JSONDecoder().decode(SyncCursor.self, from: data)
         XCTAssertEqual(cursor.lastSyncedAt, date)
         XCTAssertNil(cursor.lastSuccessfulAt)
+        XCTAssertNil(cursor.completedFullSyncAt)
+    }
+
+    func testBackgroundSyncPolicyRequiresFullHistoryOnlyWhenConfigured() {
+        XCTAssertTrue(
+            BackgroundSyncPolicy.needsInitialFullSync(
+                cursor: .empty,
+                mode: .fullThenIncremental
+            )
+        )
+        XCTAssertFalse(
+            BackgroundSyncPolicy.needsInitialFullSync(
+                cursor: .empty,
+                mode: .incremental
+            )
+        )
+        XCTAssertFalse(
+            BackgroundSyncPolicy.needsInitialFullSync(
+                cursor: SyncCursor(completedFullSyncAt: Date()),
+                mode: .fullThenIncremental
+            )
+        )
+    }
+
+    func testBackgroundDeliveryReconfiguresWhenSleepStageChanges() {
+        XCTAssertTrue(
+            BackgroundDeliveryPolicy.needsReconfiguration(
+                targetIdentifiers: ["HKCategoryTypeIdentifierSleepAnalysis"],
+                observedIdentifiers: ["HKCategoryTypeIdentifierSleepAnalysis"],
+                targetTypes: [.sleepREM],
+                observedTypes: [.sleepDeep]
+            )
+        )
+        XCTAssertFalse(
+            BackgroundDeliveryPolicy.needsReconfiguration(
+                targetIdentifiers: ["HKCategoryTypeIdentifierSleepAnalysis"],
+                observedIdentifiers: ["HKCategoryTypeIdentifierSleepAnalysis"],
+                targetTypes: [.sleepREM],
+                observedTypes: [.sleepREM]
+            )
+        )
+    }
+
+    func testUploadRetriesRetryableServerStatus() async throws {
+        let transport = StubUploadTransport(responses: [
+            UploadHTTPResponse(statusCode: 503, retryAfter: "0"),
+            UploadHTTPResponse(statusCode: 200, retryAfter: nil)
+        ])
+        let service = HTTPSyncService(
+            config: SyncConfig(maxRetryCount: 1, retryBackoffBase: 0),
+            keychain: KeychainStore(),
+            uploadTransport: transport
+        )
+        let address = try XCTUnwrap(
+            ServerAddress(host: "example.com", port: "443", defaultScheme: "https")
+        )
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let payload = SyncPayload(
+            device: .init(model: "iPhone", os: "18.0", app: "HealthSync/test"),
+            batch: [],
+            range: .init(start: now, end: now),
+            cursorFingerprint: nil,
+            fullSync: false
+        )
+
+        try await service.upload(
+            payload: payload,
+            address: address,
+            token: "test-token",
+            retries: 1
+        )
+
+        let requestSnapshot = await transport.snapshot()
+        XCTAssertEqual(requestSnapshot.attemptCount, 2)
+        XCTAssertEqual(requestSnapshot.request?.url?.path, "/api/ingest")
+        XCTAssertEqual(
+            requestSnapshot.request?.value(forHTTPHeaderField: "Authorization"),
+            "Bearer test-token"
+        )
+    }
+
+    func testUploadDoesNotRetryUnauthorizedStatus() async throws {
+        let transport = StubUploadTransport(responses: [
+            UploadHTTPResponse(statusCode: 401, retryAfter: nil),
+            UploadHTTPResponse(statusCode: 200, retryAfter: nil)
+        ])
+        let service = HTTPSyncService(
+            config: SyncConfig(maxRetryCount: 3, retryBackoffBase: 0),
+            keychain: KeychainStore(),
+            uploadTransport: transport
+        )
+        let address = try XCTUnwrap(
+            ServerAddress(host: "example.com", port: "443", defaultScheme: "https")
+        )
+        let payload = makeUploadPayload()
+
+        do {
+            try await service.upload(
+                payload: payload,
+                address: address,
+                token: "bad-token",
+                retries: 3
+            )
+            XCTFail("401 should not be accepted")
+        } catch SyncNetworkError.badStatus(let code) {
+            XCTAssertEqual(code, 401)
+        }
+
+        let requestSnapshot = await transport.snapshot()
+        XCTAssertEqual(requestSnapshot.attemptCount, 1)
+    }
+
+    func testUploadCancellationPropagates() async throws {
+        let transport = BlockingUploadTransport()
+        let service = HTTPSyncService(
+            config: SyncConfig(maxRetryCount: 3, retryBackoffBase: 0),
+            keychain: KeychainStore(),
+            uploadTransport: transport
+        )
+        let address = try XCTUnwrap(
+            ServerAddress(host: "example.com", port: "443", defaultScheme: "https")
+        )
+        let payload = makeUploadPayload()
+
+        let task = Task {
+            try await service.upload(
+                payload: payload,
+                address: address,
+                token: "test-token",
+                retries: 3
+            )
+        }
+        await transport.waitUntilStarted()
+        task.cancel()
+
+        do {
+            try await task.value
+            XCTFail("Cancelled upload should not succeed")
+        } catch is CancellationError {
+            let count = await transport.attemptCount()
+            XCTAssertEqual(count, 1)
+        }
     }
 
     func testHealthSampleCategoryMapping() {
@@ -127,5 +269,61 @@ final class HealthSyncCoreTests: XCTestCase {
         }
         let batches = SyncBatchBuffer(batchSize: 2).split(samples)
         XCTAssertEqual(batches.map(\.count), [2, 2, 1])
+    }
+
+    private func makeUploadPayload() -> SyncPayload {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        return SyncPayload(
+            device: .init(model: "iPhone", os: "18.0", app: "HealthSync/test"),
+            batch: [],
+            range: .init(start: now, end: now),
+            cursorFingerprint: nil,
+            fullSync: false
+        )
+    }
+}
+
+private actor StubUploadTransport: UploadTransport {
+    private var responses: [UploadHTTPResponse]
+    private var attemptCount = 0
+    private var lastRequest: URLRequest?
+
+    init(responses: [UploadHTTPResponse]) {
+        self.responses = responses
+    }
+
+    func upload(data: Data, request: URLRequest) async throws -> UploadHTTPResponse {
+        attemptCount += 1
+        lastRequest = request
+        guard !responses.isEmpty else {
+            throw BackgroundUploadError.missingResponse
+        }
+        return responses.removeFirst()
+    }
+
+    func snapshot() -> (attemptCount: Int, request: URLRequest?) {
+        (attemptCount, lastRequest)
+    }
+}
+
+private actor BlockingUploadTransport: UploadTransport {
+    private var started = false
+    private var attempts = 0
+
+    func upload(data: Data, request: URLRequest) async throws -> UploadHTTPResponse {
+        attempts += 1
+        started = true
+        try await Task.sleep(for: .seconds(30))
+        return UploadHTTPResponse(statusCode: 200, retryAfter: nil)
+    }
+
+    func waitUntilStarted() async {
+        while !started {
+            await Task.yield()
+        }
+    }
+
+    func attemptCount() -> Int {
+        attempts
     }
 }

@@ -3,10 +3,30 @@ import UIKit
 import HealthKit
 
 /// 手动同步的结果，便于 UI 区分「失败」与「已有同步在进行」。
-public enum SyncResult: Equatable {
+public enum SyncResult: Equatable, Sendable {
     case success
     case failed(String)
     case alreadySyncing
+}
+
+enum SyncOrigin: Sendable {
+    case foregroundAutomatic
+    case manual
+    case healthKit
+    case appRefresh
+    case processing
+
+    var allowsAuthorizationRequest: Bool {
+        self == .foregroundAutomatic || self == .manual
+    }
+
+    var honorsAlwaysFullMode: Bool {
+        self == .foregroundAutomatic || self == .manual
+    }
+
+    var usesBackgroundOverlap: Bool {
+        self == .healthKit || self == .appRefresh
+    }
 }
 
 /// 打开即同步的调度中枢（scenePhase 驱动）。
@@ -24,8 +44,7 @@ public final class SyncCoordinator {
 
     /// 防重入标志。
     private var isSyncing = false
-    private let lock = NSLock()
-    private var activeTask: Task<Void, Never>?
+    private var activeTask: Task<SyncResult, Never>?
     /// 当前进行中的任务是否为手动同步（用于区分手动与自动/后台任务，避免误报）。
     private var isManualTask = false
     /// 同步当前所处阶段（便于定位失败发生在查询还是上传）。
@@ -54,13 +73,13 @@ public final class SyncCoordinator {
     /// App 激活时调用（自动同步开关控制）。
     public func onAppActivated() {
         guard settings.autoSyncOnActive else { return }
-        startSync(fullSync: false)
+        startSync(fullSync: false, origin: .foregroundAutomatic)
     }
 
     /// 手动同步。返回值表示任务是否成功启动。
     @discardableResult
     public func syncNow() -> Bool {
-        startSync(fullSync: false)
+        beginManualSync(fullSync: false) != nil
     }
 
     /// 手动同步（可等待结果）。
@@ -69,48 +88,26 @@ public final class SyncCoordinator {
     /// - 若当前有「自动/后台」同步进行中 → 先取消它，再启动本次手动同步（手动优先）；
     /// - 否则直接启动手动同步。
     public func syncNowWithResult() async -> SyncResult {
-        await withCheckedContinuation { continuation in
-            lock.lock()
-            if isSyncing {
-                if isManualTask {
-                    // 已有手动同步在进行，提示"正在同步中"而非失败。
-                    lock.unlock()
-                    continuation.resume(returning: .alreadySyncing)
-                    return
-                }
-                // 自动/后台任务在进行：取消它，让本次手动同步接管。
-                activeTask?.cancel()
-                activeTask = nil
-                isSyncing = false
-                isManualTask = false
-            }
-            isSyncing = true
-            isManualTask = true
-            taskToken &+= 1
-            let token = taskToken
-            lock.unlock()
+        guard let task = beginManualSync(fullSync: false) else {
+            return .alreadySyncing
+        }
+        return await task.value
+    }
 
-            state.resetProgress()
-            state.syncPhase = .checkingAuth
-            state.lastError = nil
-            syncStage = "授权"
-            activeTask = Task { @MainActor [weak self] in
-                guard let self else {
-                    continuation.resume(returning: .failed("内部错误"))
-                    return
-                }
-                await self.performSync(fullSync: false, isManual: true, token: token)
-                let result: SyncResult
-                switch self.state.syncPhase {
-                case .success:
-                    result = .success
-                case .failed(let msg):
-                    result = .failed(msg)
-                default:
-                    result = .failed(self.state.lastError ?? "未知错误")
-                }
-                continuation.resume(returning: result)
-            }
+    /// 由 HealthKit 观察器或 BGTaskScheduler 启动同步。
+    /// 后台任务不抢占已运行的前台/手动任务；手动任务会优先结束后台任务。
+    func syncFromBackground(origin: SyncOrigin,
+                            fullSync: Bool = false,
+                            types: Set<HealthDataType>? = nil) async -> SyncResult {
+        guard let task = beginSync(fullSync: fullSync,
+                                   origin: origin,
+                                   requestedTypes: types) else {
+            return .alreadySyncing
+        }
+        return await withTaskCancellationHandler {
+            await task.value
+        } onCancel: {
+            task.cancel()
         }
     }
 
@@ -142,25 +139,25 @@ public final class SyncCoordinator {
 
     /// 强制全量同步（重置游标）。
     public func forceFullSync() {
+        guard prepareForManualTakeover() else { return }
         cursorStore.reset()
         state.lastSyncAt = nil
-        startSync(fullSync: true)
+        _ = beginSync(fullSync: true, origin: .manual)
     }
 
     /// 请求尚未请求过的新启用类型。HealthKit 请求成功不等于权限一定被授予。
     public func requestAuthIfNeeded() async {
         _ = await ensureHealthAuthorizationRequested()
+        await BackgroundSyncManager.shared.refreshBackgroundConfiguration()
     }
 
     /// 取消当前同步。
     public func cancel() {
-        lock.lock()
         taskToken &+= 1
         let task = activeTask
         activeTask = nil
         isSyncing = false
         isManualTask = false
-        lock.unlock()
         task?.cancel()
         state.syncPhase = .idle
     }
@@ -173,62 +170,106 @@ public final class SyncCoordinator {
     // MARK: - 内部
 
     @discardableResult
-    private func startSync(fullSync: Bool) -> Bool {
-        lock.lock()
-        if isSyncing {
-            lock.unlock()
-            return false
-        }
-        isSyncing = true
+    private func startSync(fullSync: Bool, origin: SyncOrigin) -> Bool {
+        beginSync(fullSync: fullSync, origin: origin) != nil
+    }
+
+    private func beginManualSync(fullSync: Bool) -> Task<SyncResult, Never>? {
+        guard prepareForManualTakeover() else { return nil }
+        return beginSync(fullSync: fullSync, origin: .manual)
+    }
+
+    /// 手动任务优先；只在后台任务运行时取消它。
+    private func prepareForManualTakeover() -> Bool {
+        guard isSyncing else { return true }
+        guard !isManualTask else { return false }
+        activeTask?.cancel()
+        activeTask = nil
+        isSyncing = false
         isManualTask = false
+        return true
+    }
+
+    private func beginSync(fullSync: Bool,
+                           origin: SyncOrigin,
+                           requestedTypes: Set<HealthDataType>? = nil) -> Task<SyncResult, Never>? {
+        guard !isSyncing else { return nil }
+        isSyncing = true
+        isManualTask = origin == .manual
         taskToken &+= 1
         let token = taskToken
-        lock.unlock()
 
         state.resetProgress()
         state.syncPhase = .checkingAuth
         state.lastError = nil
         syncStage = "授权"
 
-        activeTask = Task { [weak self] in
-            guard let self else { return }
-            await self.performSync(fullSync: fullSync, isManual: false, token: token)
+        let task = Task { @MainActor [weak self] in
+            guard let self else { return SyncResult.failed("内部错误") }
+            return await self.performSync(
+                fullSync: fullSync,
+                origin: origin,
+                requestedTypes: requestedTypes,
+                token: token
+            )
         }
-        return true
+        activeTask = task
+        return task
     }
 
-    private func performSync(fullSync: Bool, isManual: Bool, token: UInt64) async {
+    private func performSync(fullSync: Bool,
+                             origin: SyncOrigin,
+                             requestedTypes: Set<HealthDataType>?,
+                             token: UInt64) async -> SyncResult {
         // 1. 确保用户已经处理过当前启用类型的系统授权请求。
-        guard await ensureHealthAuthorizationRequested() else {
-            finishSync(.failed("健康数据权限请求失败，请在系统设置中检查 HealthSync"), token: token)
-            return
+        guard await ensureHealthAuthorizationRequested(
+            allowRequest: origin.allowsAuthorizationRequest
+        ) else {
+            let message = origin.allowsAuthorizationRequest
+                ? "健康数据权限请求失败，请在系统设置中检查 HealthSync"
+                : "后台同步需要先在 App 内完成健康数据授权"
+            finishSync(.failed(message), token: token)
+            return .failed(message)
         }
 
         // 2. 配置校验
         guard let serverAddress = settings.serverAddress,
               !settings.normalizedAPIToken.isEmpty else {
-            finishSync(.failed("请先在设置页配置服务器地址与 Token"), token: token)
-            return
+            let message = "请先在设置页配置服务器地址与 Token"
+            finishSync(.failed(message), token: token)
+            return .failed(message)
         }
 
         // 2.5 探测服务器可达性（可选自愈已移除，直接同步；失败由重试兜底）
 
-        let enabled = settings.enabledTypes
+        let enabled = requestedTypes.map {
+            $0.intersection(settings.enabledTypes)
+        } ?? settings.enabledTypes
         guard !enabled.isEmpty else {
-            finishSync(.failed("未启用任何数据类型"), token: token)
-            return
+            let message = "未启用任何数据类型"
+            finishSync(.failed(message), token: token)
+            return .failed(message)
         }
 
         // 3. 计算查询区间（游标策略）
         var cursor = cursorStore.load()
         let now = Date()
 
-        let requestsAllHistory = fullSync || settings.syncMode == .alwaysFull
+        let mayRunScheduledFullSync = origin != .healthKit && origin != .appRefresh
+        let firstFullRequired = mayRunScheduledFullSync
+            && settings.syncMode == .fullThenIncremental
+            && cursor.completedFullSyncAt == nil
+        let requestsAllHistory = fullSync
+            || firstFullRequired
+            || (origin.honorsAlwaysFullMode && settings.syncMode == .alwaysFull)
+        let overlap = origin.usesBackgroundOverlap
+            ? min(config.incrementalOverlap, config.backgroundIncrementalOverlap)
+            : config.incrementalOverlap
         let startDate = SyncWindowPolicy.startDate(
             requestsAllHistory: requestsAllHistory,
             lastSyncedAt: cursor.lastSyncedAt,
             lookback: settings.lookback,
-            overlap: config.incrementalOverlap,
+            overlap: overlap,
             now: now
         )
 
@@ -238,7 +279,7 @@ public final class SyncCoordinator {
         syncStage = "查询"
 
         do {
-            Logger.info("开始同步：\(enabled.count) 类型，起点 \(startDate)")
+            Logger.info("开始同步：\(enabled.count) 类型，起点 \(startDate)，来源 \(origin)")
             let safeQueryPageSize = max(1, config.batchSize)
             let safeUploadBatchSize = max(1, config.uploadBatchSize)
             let pageSize = min(safeQueryPageSize, safeUploadBatchSize)
@@ -293,28 +334,39 @@ public final class SyncCoordinator {
             // 5. 更新游标
             cursor.lastSyncedAt = now
             cursor.lastSuccessfulAt = now
+            if requestsAllHistory {
+                cursor.completedFullSyncAt = now
+            }
             cursor.dedupFingerprint = "\(now.timeIntervalSince1970)"
             cursorStore.save(cursor)
 
             finishSync(.success, token: token)
+            BackgroundSyncManager.shared.scheduleBackgroundTasks()
+            return .success
         } catch is CancellationError {
-            Logger.error("同步被取消（isManual=\(isManual)）")
+            Logger.error("同步被取消（来源：\(origin)）")
             finishSync(.failed("同步已取消"), token: token)
+            return .failed("同步已取消")
         } catch {
             let phaseLabel = syncPhaseLabel
-            Logger.error("同步失败（阶段：\(phaseLabel)）：\(error.localizedDescription)（isManual=\(isManual)，启用类型 \(enabled.count) 种，起点 \(startDate)）")
+            Logger.error("同步失败（阶段：\(phaseLabel)）：\(error.localizedDescription)（来源：\(origin)，启用类型 \(enabled.count) 种，起点 \(startDate)）")
             finishSync(.failed(error.localizedDescription), token: token)
+            return .failed(error.localizedDescription)
         }
     }
 
     @MainActor
-    private func ensureHealthAuthorizationRequested() async -> Bool {
+    private func ensureHealthAuthorizationRequested(allowRequest: Bool = true) async -> Bool {
         await refreshHealthAuthStatus()
         let pending = settings.enabledTypes
             .subtracting(settings.requestedHealthTypes)
         guard !pending.isEmpty else {
             state.healthAuthorizationState = .requested
             return true
+        }
+        guard allowRequest else {
+            state.healthAuthorizationState = .notRequested
+            return false
         }
 
         let readTypes = Set(pending.compactMap { $0.objectType })
@@ -326,6 +378,7 @@ public final class SyncCoordinator {
             try await healthService.requestReadAuthorization(for: pending)
             settings.markHealthTypesRequested(pending)
             state.healthAuthorizationState = .requested
+            await BackgroundSyncManager.shared.refreshBackgroundConfiguration()
             return true
         } catch {
             state.healthAuthorizationState = .unavailable
@@ -334,16 +387,14 @@ public final class SyncCoordinator {
     }
 
     private func finishSync(_ phase: SyncPhase, token: UInt64? = nil) {
-        lock.lock()
         if let token, taskToken != token {
             // 已取消的旧任务不得覆盖新任务的任何状态。
-            lock.unlock()
             return
         }
         isSyncing = false
         isManualTask = false
         syncStage = "idle"
-        lock.unlock()
+        activeTask = nil
         switch phase {
         case .success:
             state.syncPhase = .success

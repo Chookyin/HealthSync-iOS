@@ -27,6 +27,11 @@
 		<key>NSAllowsLocalNetworking</key>
 		<true/>
 	</dict>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>$(PRODUCT_BUNDLE_IDENTIFIER).background-refresh</string>
+		<string>$(PRODUCT_BUNDLE_IDENTIFIER).background-processing</string>
+	</array>
 	<key>NSHealthShareUsageDescription</key>
 	<string>HealthSync 需要读取你的健康数据，用于通过 HTTPS 安全同步到你自建的服务器。数据仅在本地处理后传输。</string>
 	<key>NSHealthUpdateUsageDescription</key>
@@ -38,6 +43,11 @@
 		<key>UIApplicationSupportsMultipleScenes</key>
 		<false/>
 	</dict>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>fetch</string>
+		<string>processing</string>
+	</array>
 	<key>UILaunchScreen</key>
 	<dict/>
 	<key>UISupportedInterfaceOrientations</key>
